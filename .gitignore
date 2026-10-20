@@ -1,0 +1,5 @@
+roms/
+*.nes
+reference/
+node_modules/
+out/
