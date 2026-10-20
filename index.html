@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zelda Port</title>
+  <style>
+    :root { --bg: #000; --fg: #ddd; --muted: #888; --accent: #d8b040; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    #stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    canvas#screen { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; }
+    #bar { display: flex; gap: 8px; align-items: center; padding: 6px 12px; background: #111; flex-wrap: wrap; }
+    #bar button, #bar label.btn { background: #222; color: var(--fg); border: 1px solid #444; border-radius: 4px; padding: 4px 10px; cursor: pointer; font: inherit; }
+    #bar button:hover, #bar label.btn:hover { border-color: var(--accent); }
+    #status { color: var(--muted); margin-left: auto; }
+    #drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.8); font-size: 20px; border: 3px dashed var(--accent); }
+    body.dragging #drop { display: flex; }
+    #intro { text-align: center; color: var(--muted); max-width: 32em; padding: 16px; }
+    #intro strong { color: var(--fg); }
+    input[type=file] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <label class="btn">Cargar ROM<input id="romFile" type="file" accept=".nes"></label>
+    <button id="audioBtn" type="button">Activar audio</button>
+    <button id="tableBtn" type="button" hidden>Tabla BG $0000</button>
+    <button id="forgetBtn" type="button" hidden>Olvidar ROM</button>
+    <span id="status">Sin ROM</span>
+  </div>
+  <div id="stage">
+    <div id="intro">
+      <p><strong>The Legend of Zelda — port a JavaScript</strong></p>
+      <p>Este proyecto no incluye datos de Nintendo. Carga tu copia de la ROM
+        (<code>.nes</code>, versión USA PRG0) con el botón o arrastrándola aquí.
+        Se guarda en este navegador (IndexedDB) para no pedirla otra vez.</p>
+    </div>
+    <canvas id="screen" width="256" height="240" hidden></canvas>
+  </div>
+  <div id="drop">Suelta la ROM aquí</div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
