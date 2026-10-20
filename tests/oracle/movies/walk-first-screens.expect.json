@@ -1,0 +1,4 @@
+{
+  "comment": "Walk $77 -> $76 -> $77 -> $78 -> $68 (horizontal and vertical scrolls, mode 7).",
+  "reaches": { "GameMode": [5, 6, 7], "RoomId": [118, 119, 120, 104] }
+}

@@ -1,0 +1,4 @@
+{
+  "comment": "Start on the title must lead to the file select menu (mode 1).",
+  "reaches": { "GameMode": 1 }
+}

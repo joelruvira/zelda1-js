@@ -1,0 +1,4 @@
+zmv 1
+# Power-on, no input for 600 frames: title screen, then the attract demo (mode 0).
+timing nmi
+600 .

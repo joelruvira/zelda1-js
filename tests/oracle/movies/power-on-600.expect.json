@@ -1,0 +1,4 @@
+{
+  "comment": "Checked by tests/oracle/zelda-rom.test.mjs when roms/zelda.nes exists.",
+  "always": { "GameMode": 0 }
+}

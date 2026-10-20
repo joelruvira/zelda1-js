@@ -1,0 +1,4 @@
+{
+  "comment": "Register (mode $E), back to the menu (1), then load and play the overworld (2,3,4,5).",
+  "reaches": { "GameMode": [14, 1, 2, 3, 4, 5] }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "zelda-oracle",
+  "private": true,
+  "type": "module",
+  "description": "Oracle harness: runs the original ROM in jsnes and diffs traces against the port.",
+  "devDependencies": {
+    "jsnes": "2.1.0"
+  }
+}

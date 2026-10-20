@@ -1,0 +1,45 @@
+zmv 1
+# register-name.zmv followed by walking around the first overworld screens.
+# Rooms $77 -> $76 -> $77 -> $78 -> $68 (checked by walk-first-screens.expect.json).
+timing nmi
+# title screen, then Start -> file select menu
+120 .
+2 T
+90 .
+# with no saves the cursor is on "Register your name": Start -> mode $E
+2 T
+90 .
+# type 5 letters with A (the character board cursor starts on 'A')
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+# Select x3: slot 1 -> 2 -> 3 -> "End"
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+# Start on "End": back to the file select menu
+2 T
+90 .
+# Select the registered slot (cursor should be on it) and Start the game
+2 T
+# wait for the level to finish loading and the curtain to open
+240 .
+# Link starts at ($78,$8D) in room $77: walk left into room $76 (horizontal scroll)
+200 L
+60 .
+# back right across room $77 into room $78
+480 R
+60 .
+# up into room $68 (vertical scroll)
+240 U
+120 .

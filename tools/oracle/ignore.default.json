@@ -1,0 +1,12 @@
+{
+  "comment": "Address ranges (inclusive, CPU addresses) ignored by diff.mjs unless --strict is given.",
+  "ignore": [
+    { "from": "0x0110", "to": "0x01FF", "why": "6502 hardware stack (SP starts at $FF); $010E/$010F are real variables and stay compared" },
+    { "from": "0x6C90", "to": "0x7EFF", "why": "RAM_01_CODE: bank 1 code copied to SRAM at boot; the port runs it as JS" }
+  ],
+  "presets": {
+    "temps": [
+      { "from": "0x0000", "to": "0x000F", "why": "zero-page scratch used as routine temporaries" }
+    ]
+  }
+}

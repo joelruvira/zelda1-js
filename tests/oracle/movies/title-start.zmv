@@ -1,0 +1,7 @@
+zmv 1
+# Power-on, wait on the title, press Start (UpdateMode0Demo_Sub0 checks a fresh Start press)
+# and wait for the file select menu (mode 1, reached at frame 123 in jsnes).
+timing nmi
+120 .
+2 T
+178 .

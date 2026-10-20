@@ -1,0 +1,36 @@
+zmv 1
+# Title -> menu -> "Register your name" (mode $E) -> type a name -> End -> menu -> start slot 1.
+# Calibrated in jsnes: mode $E at 214, menu at 377, playing (mode 5) at 558. Inspect with
+#   node tools/oracle/trace-info.mjs out/oracle/register-name/trace.ztrace
+timing nmi
+# title screen, then Start -> file select menu
+120 .
+2 T
+90 .
+# with no saves the cursor is on "Register your name": Start -> mode $E
+2 T
+90 .
+# type 5 letters with A (the character board cursor starts on 'A')
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+# Select x3: slot 1 -> 2 -> 3 -> "End"
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+# Start on "End": back to the file select menu
+2 T
+90 .
+# Select the registered slot (cursor should be on it) and Start the game
+2 T
+240 .
