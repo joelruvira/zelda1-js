@@ -42,8 +42,11 @@ src/core/              (Arquitecto) infraestructura, sin lógica de juego
   savestore.js         SRAM <-> localStorage; romstore.js: ROM en IndexedDB
 src/audio/             (APU) APU emulada + AudioWorklet
 src/game/              (porteadores) lógica del juego, un directorio por subsistema
-src/headless.js        runner sin DOM para el oráculo (contrato en docs/ORACLE.md)
-src/main.js            página: carga ROM, canvas, audio, bucle
+  index.js             createGameLogic() -> {reset: IsrReset, nmi: IsrNmi}; stubs hasta que P01 los porte
+  stub.js              stub('Nombre'): rutina de un paquete posterior (lanza NotImplementedError)
+src/headless.js        runner sin DOM para el oráculo (contrato en docs/ORACLE.md); usa src/game/index.js
+src/tileviewer.js      visor de tiles provisional (sin DOM, probado con la ROM real)
+src/main.js            página: carga ROM, canvas, audio (botón), bucle; visor hasta que el juego arranque
 ```
 
 Estructura de `src/game/` (la asignación exacta de rutinas está en `docs/ROUTINES.json` / `docs/PORT_MAP.md`):
@@ -80,6 +83,12 @@ export function runFrame(machine, game) {
 - `game.reset()` = `IsrReset` + `RunGame` hasta `LoopForever` (sin ninguna NMI). Esa RAM es el "frame 0"
   del oráculo.
 - El oráculo define frame igual (snapshot en el `RTI` de `IsrNmi`), por eso las trazas son comparables.
+- `src/headless.js` (`createGame({rom, sram, powerOnFill})`) monta la misma máquina que la página, llena la RAM
+  con `powerOnFill`, llama a `reset()` y en cada `stepFrame(p1, p2)` fija los mandos (`input.setOverride`) y
+  ejecuta `runFrame`. `framebuffer` es `ppu.indexBuffer`. RAM/SRAM/bus son singletons: un juego por proceso.
+- **Audio**: las escrituras `$4000-$4017` del port van por `write()` → `bus.apuWrite` → `NesAudio.writeRegister`
+  (main.js lo conecta tras el botón «Activar audio»); el bucle llama a `audio.endFrame()` tras cada `runFrame`.
+  En headless `bus.apuWrite` es `null` y se descartan.
 
 ### El HUD y el sprite 0
 
