@@ -7,7 +7,8 @@ export const BTN = Object.freeze({ A: 0x80, B: 0x40, SELECT: 0x20, START: 0x10, 
 /** Default keyboard mapping (KeyboardEvent.code -> [pad, button]). Configurable. */
 export const DEFAULT_KEYMAP = {
   ArrowUp: [0, BTN.UP], ArrowDown: [0, BTN.DOWN], ArrowLeft: [0, BTN.LEFT], ArrowRight: [0, BTN.RIGHT],
-  KeyX: [0, BTN.A], KeyZ: [0, BTN.B], Enter: [0, BTN.START], ShiftRight: [0, BTN.SELECT],
+  KeyX: [0, BTN.A], KeyZ: [0, BTN.B], Enter: [0, BTN.START],
+  ShiftLeft: [0, BTN.SELECT], ShiftRight: [0, BTN.SELECT], Space: [0, BTN.SELECT], Tab: [0, BTN.SELECT],
   KeyW: [1, BTN.UP], KeyS: [1, BTN.DOWN], KeyA: [1, BTN.LEFT], KeyD: [1, BTN.RIGHT],
   KeyG: [1, BTN.A], KeyF: [1, BTN.B], KeyT: [1, BTN.START], KeyR: [1, BTN.SELECT],
 };
