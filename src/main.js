@@ -111,7 +111,7 @@ $('forgetBtn').addEventListener('click', async () => {
 // Audio (src/audio, docs/AUDIO.md): the AudioContext needs a user gesture.
 let audio = null;
 const readCpu = (addr) => (machine ? read(addr) : 0); // the button may come before the ROM
-$('audioBtn').addEventListener('click', async () => {
+async function enableAudio() {
   try {
     if (!audio) {
       const { NesAudio } = await import('./audio/audio.js');
@@ -119,11 +119,14 @@ $('audioBtn').addEventListener('click', async () => {
       audio.setReadMemory(readCpu); // DMC samples (PcmSamples, fixed bank)
     }
     await audio.init();
-    status('Audio activado');
+    $('audioBtn').hidden = true;
   } catch (err) {
     status(`Audio no disponible (${err.message})`);
   }
-});
+}
+$('audioBtn').addEventListener('click', enableAudio);
+// The first key press or click is the user gesture browsers require: turn audio on with it.
+for (const type of ['keydown', 'pointerdown']) addEventListener(type, enableAudio, { once: true });
 
 addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dragging'); });
 addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
@@ -135,11 +138,11 @@ addEventListener('drop', async (e) => {
 });
 
 (async () => {
-  const stored = await getStoredRom();
-  if (stored) { start(stored, { remember: false }); return; }
-  // Development convenience: a ROM at roms/zelda.nes (git-ignored) is picked up automatically.
+  // The user's ROM at roms/zelda.nes (git-ignored) loads automatically; otherwise the one remembered in IndexedDB.
   try {
     const res = await fetch('roms/zelda.nes');
-    if (res.ok) start(await res.arrayBuffer());
+    if (res.ok) { start(await res.arrayBuffer(), { remember: false }); return; }
   } catch { /* no local ROM */ }
+  const stored = await getStoredRom();
+  if (stored) start(stored, { remember: false });
 })();

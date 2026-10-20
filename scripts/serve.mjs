@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // Minimal static file server for the port (ES modules need http://, not file://).
-// Usage: node scripts/serve.mjs [port]   (default 8080, or $PORT)
+// Usage: node scripts/serve.mjs [port] [--open]   (default 8080, or $PORT; --open launches the browser)
 
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const root = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
-const port = Number(process.argv[2] ?? process.env.PORT ?? 8080);
+const argv = process.argv.slice(2);
+const openBrowser = argv.includes('--open');
+const port = Number(argv.find((a) => !a.startsWith('--')) ?? process.env.PORT ?? 8080);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -41,4 +44,12 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => console.log(`Serving ${root} at http://localhost:${port}/`));
+server.listen(port, () => {
+  const url = `http://localhost:${port}/`;
+  console.log(`Serving ${root} at ${url}`);
+  if (!openBrowser) return;
+  const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
+    : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+    : ['xdg-open', [url]];
+  spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+});
