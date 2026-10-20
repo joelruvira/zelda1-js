@@ -1,0 +1,4 @@
+{
+  "comment": "Register ZELDA: QuestNumbers[0] = 1 when leaving mode $E (frame 416); then load and play (modes 2,3,4,5).",
+  "reaches": { "GameMode": [14, 1, 2, 3, 4, 5], "QuestNumbers": 1 }
+}

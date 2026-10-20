@@ -1,0 +1,5 @@
+{
+  "comment": "Whole attract demo with no input: stays in mode 0, plays the story (phase 1, subphases 0-4) and loops back to the title.",
+  "always": { "GameMode": 0 },
+  "reaches": { "DemoPhase": [0, 1], "DemoSubphase": [0, 1, 2, 3, 4] }
+}

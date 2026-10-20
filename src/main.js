@@ -8,6 +8,7 @@ import { createLoop, runFrame } from './core/loop.js';
 import { getStoredRom, storeRom, forgetRom } from './core/romstore.js';
 import { loadSram, createAutoSaver } from './core/savestore.js';
 import { read } from './core/bus.js';
+import { cpu } from './core/ram.js';
 import { createTileViewer } from './tileviewer.js';
 import { createGameLogic } from './game/index.js';
 import { WIDTH, HEIGHT } from './core/ppu.js';
@@ -59,6 +60,7 @@ async function start(buffer, { remember = true } = {}) {
 
   const logic = createGameLogic();
   game = logic.ported ? logic : createTileViewer(); // tile viewer until P01 ports IsrReset/IsrNmi
+  cpu.reset(); // same power-on flags/stack as src/headless.js
   game.reset();
   $('intro').hidden = true;
   canvas.hidden = false;
@@ -67,8 +69,22 @@ async function start(buffer, { remember = true } = {}) {
   fitCanvas();
   machine.bus.apuWrite = (addr, value) => audio?.writeRegister(addr, value);
   audio?.setReadMemory(readCpu); // re-snapshot $8000-$FFFF for the DMC with the new ROM
+  let halted = false;
   loop = createLoop({
-    frame: () => { runFrame(machine, game); audio?.endFrame(); },
+    frame: () => {
+      if (halted) return;
+      try {
+        runFrame(machine, game);
+      } catch (err) {
+        // A routine of a later package is still a stub (NotImplementedError): stop on this frame.
+        halted = true;
+        loop.stop();
+        status(`Juego detenido: ${err.message}`);
+        console.error(err);
+        return;
+      }
+      audio?.endFrame();
+    },
     present,
   });
   loop.start();

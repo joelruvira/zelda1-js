@@ -1,0 +1,4 @@
+{
+  "comment": "P03: register ZELDA (second quest file), back to the menu, start it: mode 2 applies the Q2 OW patches (2,3,4,5).",
+  "reaches": { "GameMode": [14, 1, 2, 3, 4, 5], "QuestNumbers": 1 }
+}

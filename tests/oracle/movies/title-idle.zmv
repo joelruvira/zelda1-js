@@ -1,0 +1,6 @@
+zmv 1
+# Power-on and no input for 5000 frames: the whole attract demo of mode 0 (P23).
+# jsnes: title (phase 0) until 951, story scroll from 955, item parade (phase 1 subphase 2)
+# 1675-4490, final items until 4803, back to the title (phase 0 initialized again) at 4804-4807.
+timing nmi
+5000 .

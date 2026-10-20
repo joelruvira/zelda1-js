@@ -1,0 +1,4 @@
+{
+  "comment": "Register a name (E), back to the menu (1), eliminate it (F), End -> register (E), End -> menu (1). Slot 1 is deleted at frame 573 (SampleRequest 8).",
+  "reaches": { "GameMode": [14, 1, 15], "SampleRequest": 8 }
+}

@@ -1,0 +1,4 @@
+{
+  "comment": "Play, pad 2 Up+A in the submenu -> mode 8 -> SAVE -> mode $D (frame 983) -> menu -> play again.",
+  "reaches": { "GameMode": [14, 1, 2, 3, 4, 5, 8, 13] }
+}

@@ -1,0 +1,45 @@
+zmv 1
+# Register a name, start the game, walk a little, open the submenu (Start) and hold Up+A on
+# pad 2 (UpdateMenuActive) -> CONTINUE/SAVE/RETRY (mode 8); choose SAVE: mode $D writes file B
+# and commits it to file A -> title submode 1 -> menu; then load the slot again.
+# Compare SRAM $6000-$7FFF. Needs P05/P11/P13/P25 in the port (modes 2-5 and 8).
+timing nmi
+# title screen, then Start -> file select menu
+120 .
+2 T
+90 .
+2 T
+90 .
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 T
+90 .
+# Start slot 1 -> game (mode 5)
+2 T
+240 .
+# walk left a bit
+20 L
+10 .
+# Start: submenu scrolls down; then pad 2 Up+A -> mode 8
+2 T
+90 .
+2 . UA
+90 .
+# Select -> SAVE; Start (flashes $40 frames) -> mode $D -> menu
+2 S
+10 .
+2 T
+180 .
+# menu: Start slot 1 again -> game
+2 T
+240 .

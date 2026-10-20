@@ -201,7 +201,7 @@ Limitaciones conocidas (no afectan a la RAM):
 
 * La fila 0 del framebuffer siempre es negra (jsnes no dibuja la línea 0) → enmascarada en el diff.
 * Con el recorte izquierdo activo (PPUMASK bits 1‑2 a 0) jsnes pinta negro donde el hardware muestra el
-  color de fondo → `--ignore-left8` si molesta.
+  color de fondo. **Corregido** en el oráculo (ver abajo); `--ignore-left8` ya no hace falta para Zelda.
 * El mirroring de una pantalla del MMC1 no distingue página baja/alta (Zelda no lo usa) y no se ignoran
   escrituras MMC1 en ciclos consecutivos (Zelda no las hace).
 * La RAM de encendido de jsnes es `$FF` con un patrón; el oráculo la sobrescribe con `--power-on`
@@ -209,6 +209,32 @@ Limitaciones conocidas (no afectan a la RAM):
   que este valor importa.
 * La línea exacta del split del sprite 0 depende de la temporización de ciclos de jsnes; un error de ±1
   línea solo afectaría a la imagen.
+
+**Correcciones de jsnes aplicadas por el oráculo** (`patchJsnesPpu` en `tools/oracle/lib/nes-oracle.mjs`;
+solo cambian la imagen, nunca la RAM ni la temporización de CPU; si una versión nueva de jsnes cambia el
+código parcheado, el oráculo lanza un error en vez de ignorarlo):
+
+1. Sprites 8x16 con tile impar: jsnes usaba `tile-1` desde `$1000` como mitad superior (cursor corazón `$F3`,
+   cursores del registro `$25`).
+2. Las filas de fondo por encima del fine‑Y no se dibujaban (scroll vertical de la historia).
+3. Color de fondo (`$3F00`): jsnes lo fijaba al empezar el vblank, antes de que la NMI escriba la paleta
+   (se veía un frame tarde). Ahora se toma por banda renderizada.
+4. `$2007` durante el render: jsnes perdía el bit 2 del fine‑Y (`& 3`) tras el incremento X/Y; el split
+   del scroll vertical (modo 7) salía hasta 4 píxeles desplazado.
+5. Scroll fino X: jsnes dibujaba 32 tiles y dejaba sin pintar los últimos `fineX` píxeles (modo 7
+   horizontal); ahora se dibuja el tile 33.
+6. Fila 1: jsnes ponía ahí el OAM secundario residual del frame anterior en vez de evaluar el OAM
+   (los sprites con Y=0 perdían su primera línea).
+7. Columna izquierda recortada: ahora muestra el color de fondo, no negro.
+
+Diferencias de imagen que quedan, conocidas y aceptadas:
+
+* El frame en que la escritura a PPUMASK/scroll del juego cae dentro del área visible porque la NMI del
+  original dura más que el vblank (p. ej. frame 121 de `title-start`: Start en el título; la NMI tarda
+  ~8300 ciclos antes de `TurnOffAllVideo` y el hardware llega a dibujar las líneas 0‑52). El port no
+  cuenta ciclos de CPU fuera de los bucles temporizados (modelo *catch‑up* de `src/core/ppu.js`).
+* La línea exacta del split del scroll vertical (modo 7, línea 63): jsnes renderiza por línea completa y
+  el port por punto.
 
 Alternativas si hiciera falta más precisión de imagen: **Mesen2** (máxima precisión; tiene modo test
 headless y scripting Lua para volcar RAM por frame, pero es nativo, no Node), **FCEUX** (`--loadlua`

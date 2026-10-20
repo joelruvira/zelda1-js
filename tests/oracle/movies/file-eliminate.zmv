@@ -1,0 +1,64 @@
+zmv 1
+# Register a name in slot 1, then eliminate it (mode $F), go from "End" to register (mode $E),
+# and back to the menu. Covers InitModeEandF (E and F), UpdateModeFElimination, DeleteSlot,
+# FormatFileA, UpdateModeERegister (End with and without names), UpdateMode0Demo_Sub1/2.
+timing nmi
+# title screen, then Start -> file select menu
+120 .
+2 T
+90 .
+# no saves: the cursor is on "Register your name": Start -> mode $E
+2 T
+90 .
+# type 3 letters with A (the board cursor starts on A)
+2 A
+6 .
+2 A
+6 .
+2 A
+6 .
+# Select x3: slot 1 -> 2 -> 3 -> "End"; Start: files B written, back to the menu
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 T
+90 .
+# menu cursor on slot 1: Select -> Register (slots 2, 3 are empty) -> Elimination; Start -> mode $F
+2 S
+8 .
+2 S
+8 .
+2 T
+60 .
+# mode $F: cursor on slot 1; Select x3 -> End and back x1 -> slot 1 (wraps); Start deletes it
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 T
+30 .
+# Select x3 -> "End"; Start -> mode $E (register)
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 T
+60 .
+# mode $E with no names: Select x3 -> "End", Start -> back to the menu
+2 S
+8 .
+2 S
+8 .
+2 S
+8 .
+2 T
+90 .
