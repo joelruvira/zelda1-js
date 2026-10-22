@@ -67,20 +67,6 @@ También funciona con un mando conectado al ordenador.
 
 Se guardan solas en el navegador, igual que en el cartucho original. Juega siempre desde el mismo navegador para no perderlas.
 
-## Problemas frecuentes
-
-**`npm` no se reconoce como un comando.** Node.js no se ha instalado bien. Repite el paso 1 y cierra y vuelve a abrir la ventana negra.
-
-**La página dice que no hay ROM.** Comprueba que el archivo se llama exactamente `zelda.nes` y está dentro de la carpeta `roms`.
-
-**La página avisa de que la ROM no es la versión correcta.** El juego está hecho para la versión USA PRG0. Otras versiones pueden fallar.
-
-## Para desarrolladores
-
-El código está en `src/`, una función JavaScript por cada rutina del juego original. Los tests se lanzan con `npm test`. El plan de trabajo y la arquitectura están en [`docs/`](docs).
-
-La referencia del port es el [desensamblado de A. Nuñez](https://github.com/aldonunez/zelda1-disassembly).
-
 ---
 
 <sub>The Legend of Zelda es una marca de Nintendo. Proyecto de fans sin ánimo de lucro y sin relación con Nintendo. Este repositorio no contiene ningún dato del juego original.</sub>
