@@ -1,0 +1,19 @@
+{
+  "comment": "Kills in rooms $78 and $68 (RoomKillCount >= 2, death sparkle metastate $14).",
+  "sram": "out/sram/p08-items.sav",
+  "reaches": {
+    "RoomId": [
+      120,
+      104
+    ],
+    "RoomKillCount": [
+      1,
+      2
+    ],
+    "WorldKillCycle": [
+      1,
+      2,
+      3
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "comment": "P06: sword cave (mode $B, stairs mode $10), walls and edges in $77, $78, $68 with octoroks; Link knocked back (ObjShoveDir) and monsters shoved by the sword.",
+  "reaches": { "GameMode": [5, 7, 11, 16], "RoomId": [119, 120, 104], "Items": 1 }
+}

@@ -1,0 +1,5 @@
+{
+  "comment": "P11: continue the prepared file (--sram tests/oracle/movies/p11-items.sav), walk to level 1 and enter it (map + compass), submenu with the sheet map in rooms $73 and $63.",
+  "sram": "p11-items.sav",
+  "reaches": { "CurLevel": 1, "GameMode": [5, 6, 7, 16], "RoomId": [119, 120, 104, 88, 72, 56, 55, 115, 99], "MenuState": [1, 6, 7, 8] }
+}

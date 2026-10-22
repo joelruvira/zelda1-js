@@ -52,6 +52,10 @@ export function runOriginal(name, { a = 0, x = 0, y = 0, c = 0 } = {}) {
   mem.set(sram, 0x6000);
   nes.mmap.loadRomBank(bus.mapper.prgBank & 7, 0x8000);
   nes.mmap.loadRomBank(7, 0xc000); // Zelda keeps bank 7 fixed at $C000
+  // MMC1 serial register: aligned, as SwitchBank always finds it (an aborted run may leave it mid-way).
+  nes.mmap.regBuffer = 0;
+  nes.mmap.regBufferCounter = 0;
+  bus.mapper.shift = 0x10; // the port's MMC1 (it gets the same writes)
   const { addr } = label(name);
   cpu.REG_ACC = a & 0xff;
   cpu.REG_X = x & 0xff;
@@ -75,4 +79,17 @@ export function runOriginal(name, { a = 0, x = 0, y = 0, c = 0 } = {}) {
 /** Replacement for src/game/stub.js: the stubbed routine runs as original code. Returns A. */
 export function stub(name) {
   return (a = 0, x = 0, y = 0) => runOriginal(name, { a, x, y }).a;
+}
+
+/** Replacement for stubRegs() of src/game/stub.js: returns {a, x, y, c} of the original code. */
+export function stubRegs(name) {
+  return (a = 0, x = 0, y = 0) => runOriginal(name, { a, x, y });
+}
+
+/**
+ * Replacement for stubX() of src/game/stub.js: fn(x) runs the original with X = slot and A/Y as
+ * TableJump leaves them when the object jump tables dispatch ObjType[X] (A = [$03], Y = type*2+2).
+ */
+export function stubX(name) {
+  return (x = 0) => runOriginal(name, { a: ram[0x03], x, y: (ram[0x34f + x] * 2 + 2) & 0xff }).a;
 }

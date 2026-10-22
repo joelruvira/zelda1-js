@@ -1,0 +1,15 @@
+{
+  "comment": "Enters level 1 and goes through doorways between its rooms.",
+  "sram": "out/sram/p08-items.sav",
+  "reaches": {
+    "CurLevel": [
+      1
+    ],
+    "RoomId": [
+      115,
+      99,
+      114,
+      116
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "comment": "Reaches a ladder room and deploys the ladder (LadderSlot != 0) in mode 5.",
+  "sram": "out/sram/p08-items.sav",
+  "reaches": {
+    "RoomId": [
+      39
+    ],
+    "LadderSlot": [
+      8
+    ]
+  }
+}

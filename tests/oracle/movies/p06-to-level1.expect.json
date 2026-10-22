@@ -1,0 +1,4 @@
+{
+  "comment": "P06: sword cave, overworld walk $77 -> $37 (13 screens), level 1 entrance $73 and rooms $72, $74 (doorways).",
+  "reaches": { "GameMode": [5, 7, 11, 16], "RoomId": [119, 55, 115, 114, 116], "CurLevel": 1 }
+}

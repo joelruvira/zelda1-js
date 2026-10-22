@@ -1,9 +1,81 @@
-// Decimal and hearts formatting into the dynamic transfer buffer (Z_01). Package P11.
-// Early port (published by P24, which needs them for the file-select screen in wave 2):
-// FormatDecimalByte, DivideBy10, FormatHeartsInTextBuf. The rest of P11 goes here later.
+// Status bar text, decimal and hearts formatting into the dynamic transfer buffer (Z_01,
+// BANK_01_CODE: runs from WRAM in the original). Package P11.
+// FormatDecimalByte, DivideBy10 and FormatHeartsInTextBuf were published early for P24 (wave 2).
 
-import { ram } from '../../core/ram.js';
-import { DynTileBuf, ForceSwordShot } from '../../core/vars.js';
+import { ram, peek } from '../../core/ram.js';
+import { label } from '../../core/rom.js';
+import {
+  DynTileBuf, ForceSwordShot, HeartValues, HeartPartial, InvRupees, InvMagicKey, InvKeys, InvBombs,
+} from '../../core/vars.js';
+
+/**
+ * FormatStatusBarText (Z_01): copy StatusBarTransferBufTemplate (in WRAM, BANK_01_CODE) to DynTileBuf
+ * and fill in the hearts, rupee, key and bomb counts.
+ */
+export function FormatStatusBarText() {
+  // FormatStatusBarText (Z_01)
+  const tpl = label('StatusBarTransferBufTemplate').addr; // read from its WRAM copy, like the original
+  for (let y = 0x28; y >= 0; y--) ram[DynTileBuf + y] = peek(tpl + y);
+  ram[0x0e] = ram[HeartValues];
+  ram[0x0f] = ram[HeartPartial];
+  FormatHeartsInTextBuf(0x03);
+  FormatDecimalCountByteInTextBuf(ram[InvRupees], 0x1b); // LDX #$02 is overwritten
+  if (ram[InvMagicKey] !== 0) {
+    // Magic key: "XA" instead of the key count.
+    ram[0x00] = 0x21;
+    ram[0x01] = 0x21; // "X"
+    FormatCharDoublet(0x0a); // "A"
+    // LDX #$08: overwritten by CopyTripletToTextBuf
+    CopyTripletToTextBuf();
+  } else {
+    FormatDecimalCountByteInTextBuf(ram[InvKeys], 0x21);
+  }
+  return FormatDecimalCountByteInTextBuf(ram[InvBombs], 0x27);
+}
+
+/** FormatDecimalCountByteInTextBuf (Z_01): A value, Y offset of the LAST character in DynTileBuf. */
+export function FormatDecimalCountByteInTextBuf(a, y) {
+  // FormatDecimalCountByteInTextBuf (Z_01)
+  ram[0x00] = y;
+  FormatDecimalCountByte(a);
+  return CopyTripletToTextBuf(); // falls through
+}
+
+/** CopyTripletToTextBuf (Z_01): DynTileBuf[[$00]-2..[$00]] = [$01..$03]. Returns A = [$01]. */
+export function CopyTripletToTextBuf() {
+  // CopyTripletToTextBuf (Z_01)
+  let x = ram[0x00];
+  let a = 0;
+  for (let y = 0x02; y >= 0; y--) {
+    a = ram[0x01 + y];
+    ram[(DynTileBuf + x) & 0xffff] = a;
+    x = (x - 1) & 0xff;
+  }
+  return a;
+}
+
+/**
+ * FormatDecimalCountByte (Z_01): 123 -> "123", 23 -> "X23", 3 -> "X3 " in [$01..$03]
+ * ("X" = $21, space = $24).
+ */
+export function FormatDecimalCountByte(a) {
+  // FormatDecimalCountByte (Z_01)
+  const r = FormatDecimalByte(a);
+  a = r.a;
+  let y = r.y;
+  if (y === 0x24) y = 0x21;
+  ram[0x01] = y;
+  if (a !== 0x24) return a;
+  return FormatCharDoublet(ram[0x03]); // falls through
+}
+
+/** FormatCharDoublet (Z_01): [$02] = A, [$03] = space. Returns A = $24. */
+export function FormatCharDoublet(a) {
+  // FormatCharDoublet (Z_01)
+  ram[0x02] = a;
+  ram[0x03] = 0x24;
+  return 0x24;
+}
 
 /**
  * FormatDecimalByte (Z_01): spaces ($24) for missing leading digits.

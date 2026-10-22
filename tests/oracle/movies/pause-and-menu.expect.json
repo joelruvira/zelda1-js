@@ -1,0 +1,5 @@
+{
+  "comment": "P11: continue the prepared file (--sram tests/oracle/movies/p11-items.sav), submenu open/cursor/close in the OW, Select pause.",
+  "sram": "p11-items.sav",
+  "reaches": { "GameMode": 5, "MenuState": [1, 2, 3, 4, 5, 6, 7, 8, 9], "SelectedItemSlot": [0, 1, 2, 4, 6, 15], "Paused": 1 }
+}

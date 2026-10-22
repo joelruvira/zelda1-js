@@ -1,0 +1,33 @@
+{
+  "comment": "Level 1: 12 rooms through doorways (dark: none), out to the OW and back in.",
+  "sram": "out/sram/p08-items.sav",
+  "reaches": {
+    "CurLevel": [
+      1,
+      0
+    ],
+    "GameMode": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      16
+    ],
+    "RoomId": [
+      115,
+      99,
+      114,
+      116,
+      83,
+      84,
+      82,
+      66,
+      67,
+      51,
+      35,
+      34
+    ]
+  }
+}
