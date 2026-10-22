@@ -18,7 +18,7 @@ No hace falta saber programar. Son cinco pasos y solo se hacen una vez.
 
 ### 1. Instala Node.js
 
-Entra en [nodejs.org](https://nodejs.org), descarga la versión que pone **LTS** e instálala como cualquier otro programa, dándole a *Siguiente* hasta terminar.
+Entra en [nodejs.org](https://nodejs.org), descarga la versión que pone **LTS** e instálala como cualquier otro programa, aceptando las opciones que vienen marcadas.
 
 ### 2. Descarga el juego
 
@@ -30,16 +30,16 @@ El juego necesita tu copia de *The Legend of Zelda* para la NES, versión **USA 
 
 Renómbrala a `zelda.nes` y métela en la carpeta `roms` que hay dentro de `zelda1-js-main`.
 
+En Windows, si el archivo ya se ve como `zelda.nes`, escribe solo `zelda` al renombrarlo. Windows oculta la extensión y, si la vuelves a poner, el archivo acaba llamándose `zelda.nes.nes`.
+
 ### 4. Abre una terminal en la carpeta
 
-- **Mac:** haz clic derecho sobre la carpeta `zelda1-js-main` y elige **Servicios → Nuevo terminal en la carpeta**.
+- **Mac:** abre la aplicación **Terminal** (búscala con Cmd + Espacio). Escribe `cd` seguido de un espacio, arrastra la carpeta `zelda1-js-main` a la ventana y pulsa Enter.
 - **Windows:** abre la carpeta `zelda1-js-main`, haz clic en la barra de direcciones de arriba, escribe `cmd` y pulsa Enter.
-
-Se abrirá una ventana negra donde se pueden escribir órdenes.
 
 ### 5. Arranca el juego
 
-Escribe esto en la ventana negra y pulsa Enter:
+Escribe esto en la terminal y pulsa Enter:
 
 ```
 npm start
@@ -47,7 +47,7 @@ npm start
 
 El navegador se abrirá solo con el juego. Pulsa cualquier tecla para que empiece a sonar la música.
 
-Para cerrar el juego, cierra la ventana negra. Para volver a jugar otro día, repite solo los pasos 4 y 5.
+Para cerrar el juego, cierra la terminal. Para volver a jugar otro día, repite solo los pasos 4 y 5.
 
 ## Controles
 
