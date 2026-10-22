@@ -1,0 +1,15 @@
+{
+  "comment": "Rock pushed in room $79 (UpdateRockOrGravestone states 0 and 1, stairs revealed).",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      121
+    ],
+    "ObjState+11": [
+      1
+    ],
+    "Tune1Request": [
+      4
+    ]
+  }
+}

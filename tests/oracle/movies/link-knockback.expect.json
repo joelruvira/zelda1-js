@@ -1,0 +1,15 @@
+{
+  "sram": "p08-items.sav",
+  "comment": "Link is shoved (ObjShoveDir bit 7) and loses hearts in room $78.",
+  "reaches": {
+    "RoomId": [
+      120
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "events": {
+    "linkShoved": 3
+  }
+}

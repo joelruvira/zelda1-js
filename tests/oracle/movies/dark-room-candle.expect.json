@@ -1,0 +1,28 @@
+{
+  "comment": "Whirlwind to level 5, dark room $66 brightened by the candle, its bombable west wall blown open.",
+  "sram": "p09-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      5
+    ],
+    "RoomId": [
+      119,
+      118,
+      102
+    ],
+    "CandleState": [
+      1,
+      2
+    ],
+    "BrighteningRoom": [
+      1
+    ],
+    "TriggeredDoorCmd": [
+      7
+    ],
+    "CurOpenedDoors": [
+      2
+    ]
+  }
+}

@@ -5,7 +5,7 @@
 //     against the pure oracle. This validates P08 inside the real game before its callers exist in JS.
 //  2. full port (src/headless.js): diff 0 — skipped while the port still hits a NotImplementedError
 //     (P05 UpdateMode5Play, P13 transitions... are later/parallel packages).
-// The movies after walk-first-screens start from out/sram/p08-items.sav, rebuilt here from the oracle
+// The movies after walk-first-screens start from tests/oracle/movies/p08-items.sav, rebuilt here if missing from the oracle
 // (tests/game/p08-make-movies.mjs). Skipped without roms/zelda.nes or jsnes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ import { hasJsnes } from '../../tools/oracle/lib/jsnes-loader.mjs';
 const ok = hasRom && (await hasJsnes());
 const skip = !ok && 'needs roms/zelda.nes and tools/oracle jsnes';
 const MOVIES = join(ROOT, 'tests/oracle/movies');
-const SRAM = 'out/sram/p08-items.sav';
+const SRAM = 'tests/oracle/movies/p08-items.sav';
 
 const SCENARIOS = [
   ['walk-first-screens', null],

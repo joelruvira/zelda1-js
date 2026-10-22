@@ -1,0 +1,27 @@
+{
+  "comment": "Money-making game in $76: InitCave permutation/amounts, state 5 (signs, PostCredit/PostDebit), twice.",
+  "sram": "p15-items.sav",
+  "reaches": {
+    "RoomId": [
+      118
+    ],
+    "GameMode": [
+      11,
+      10
+    ],
+    "ObjType+1": [
+      112
+    ],
+    "ObjState+1": [
+      0,
+      1,
+      2,
+      5,
+      8
+    ],
+    "CaveChosenIndex": [
+      0,
+      2
+    ]
+  }
+}

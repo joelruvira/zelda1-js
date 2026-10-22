@@ -226,6 +226,9 @@ código parcheado, el oráculo lanza un error en vez de ignorarlo):
 6. Fila 1: jsnes ponía ahí el OAM secundario residual del frame anterior en vez de evaluar el OAM
    (los sprites con Y=0 perdían su primera línea).
 7. Columna izquierda recortada: ahora muestra el color de fondo, no negro.
+8. Escala de grises (PPUMASK bit 0, destello de la bomba `UpdateBombFlashEffect`): jsnes pintaba el fondo
+   con un color elegido por los bits de énfasis (negro); el hardware muestra `$3F00 & $30` como cualquier
+   otro píxel. Las correcciones 3 y 7 se aplican ahora también en escala de grises.
 
 Diferencias de imagen que quedan, conocidas y aceptadas:
 
@@ -233,8 +236,10 @@ Diferencias de imagen que quedan, conocidas y aceptadas:
   original dura más que el vblank (p. ej. frame 121 de `title-start`: Start en el título; la NMI tarda
   ~8300 ciclos antes de `TurnOffAllVideo` y el hardware llega a dibujar las líneas 0‑52). El port no
   cuenta ciclos de CPU fuera de los bucles temporizados (modelo *catch‑up* de `src/core/ppu.js`).
-* La línea exacta del split del scroll vertical (modo 7, línea 63): jsnes renderiza por línea completa y
-  el port por punto.
+* La línea exacta del split del scroll (modo 7 vertical y horizontal, y el primer frame del modo 4 que le
+  sigue; solo la línea 63): jsnes renderiza por línea completa y el port por punto.
+* Frames cuya NMI original dura más de un frame de vídeo (lag justo después), p. ej. `ow-bomb-secret` 1180
+  (modo `$B`): el original ya ha apagado el vídeo cuando se dibuja la imagen.
 
 Alternativas si hiciera falta más precisión de imagen: **Mesen2** (máxima precisión; tiene modo test
 headless y scripting Lua para volcar RAM por frame, pero es nativo, no Node), **FCEUX** (`--loadlua`

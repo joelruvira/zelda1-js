@@ -1,0 +1,26 @@
+{
+  "sram": "p08-items.sav",
+  "comment": "Level 1 cellar $7F under room $22: modes $10 -> 9 (TargetMode 9), $A, 4, 5.",
+  "reaches": {
+    "CurLevel": [
+      1
+    ],
+    "RoomId": [
+      34,
+      127
+    ],
+    "CellarSourceRoomId": [
+      34
+    ],
+    "GameMode": [
+      5,
+      16,
+      9,
+      10,
+      4
+    ],
+    "TargetMode": [
+      9
+    ]
+  }
+}

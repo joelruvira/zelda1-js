@@ -22,7 +22,9 @@ export async function main(argv) {
   const name = resolveMovie(spec).name;
   const dirs = ['oracle', 'port', 'diff'].map((d) => join(REPO_ROOT, 'out', d, name));
   const common = [...(args.rom ? ['--rom', args.rom] : [])];
-  let code = await runOracle([spec, '--out', dirs[0], '--png', args.png ?? 'last', '--quiet', ...common]);
+  // --sram / --power-on go to the oracle; run-port takes them from the oracle trace's header.
+  const start = [...(args.sram ? ['--sram', args.sram] : []), ...(args['power-on'] ? ['--power-on', args['power-on']] : [])];
+  let code = await runOracle([spec, '--out', dirs[0], '--png', args.png ?? 'last', '--quiet', ...common, ...start]);
   if (code) return code;
   code = await runPort([
     '--inputs-from', join(dirs[0], 'trace.ztrace'), '--out', dirs[1], ...common,

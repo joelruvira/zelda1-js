@@ -1,0 +1,18 @@
+{
+  "comment": "Whirlwind warps and the pond secret of level 7.",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      34,
+      66
+    ],
+    "WhirlwindTeleportingState": [
+      1,
+      2
+    ],
+    "SecretColorCycle": [
+      11,
+      12
+    ]
+  }
+}

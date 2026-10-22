@@ -1,0 +1,25 @@
+{
+  "comment": "Level 1 to Aquamentus: items taken on the way, heart container, triforce piece (mode $12), back to the OW.",
+  "sram": "p10-items.sav",
+  "reaches": {
+    "RoomId": [
+      115,
+      99,
+      83,
+      82,
+      66,
+      67,
+      68,
+      69,
+      53,
+      54
+    ],
+    "GameMode": [
+      5,
+      18
+    ],
+    "InvTriforce": [
+      1
+    ]
+  }
+}

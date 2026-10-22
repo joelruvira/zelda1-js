@@ -202,7 +202,8 @@ for (const [name, regsOf, port, cmp, tweak] of cases) {
         ret = port(g);
       } catch (e) {
         // An original routine (stub run as 6502 code) that never returns on a random state.
-        if (/did not return|Game crashed/.test(e.message)) { skipped++; continue; }
+        // Or a JS port whose TableJump index is out of its table (the original jumps to garbage).
+        if (/did not return|Game crashed|TableJump: no handler/.test(e.message)) { skipped++; continue; }
         throw new Error(`${name} case ${i}: ${e.message}`);
       }
       const stubbed = Object.keys(H.calls).filter((k) => H.calls[k] !== before[k]);
@@ -214,7 +215,8 @@ for (const [name, regsOf, port, cmp, tweak] of cases) {
       } catch (e) {
         // Random states can crash original enemy/cave code run inside the routine (the stubs it
         // calls in the port get the same RAM, but not always the same A/Y/C).
-        if (/did not return|Game crashed/.test(e.message)) { skipped++; continue; }
+        // Or a JS port whose TableJump index is out of its table (the original jumps to garbage).
+        if (/did not return|Game crashed|TableJump: no handler/.test(e.message)) { skipped++; continue; }
         throw new Error(`${name} case ${i} regs ${JSON.stringify(g)}: original: ${e.message}; port ran ${stubbed.join(',')}`);
       }
       const d = diffs(p, snapshot());

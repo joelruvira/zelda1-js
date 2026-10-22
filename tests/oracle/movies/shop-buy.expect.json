@@ -1,0 +1,27 @@
+{
+  "comment": "Shop in $66: prices, textbox, purchase (PostDebit, TakeItem), states 3-4, shopkeeper gone.",
+  "sram": "p15-items.sav",
+  "reaches": {
+    "RoomId": [
+      103,
+      102
+    ],
+    "GameMode": [
+      11,
+      10
+    ],
+    "ObjType+1": [
+      120
+    ],
+    "ObjState+1": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "InvRupees": [
+      140
+    ]
+  }
+}

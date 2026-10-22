@@ -1,0 +1,22 @@
+{
+  "sram": "p14-items.sav",
+  "comment": "Shortcut stairs under the rock of $79: modes $10 -> $C (TargetMode $C), $A, 4, 5.",
+  "reaches": {
+    "RoomId": [
+      121
+    ],
+    "Tune1Request": [
+      4
+    ],
+    "GameMode": [
+      5,
+      16,
+      12,
+      10,
+      4
+    ],
+    "TargetMode": [
+      12
+    ]
+  }
+}

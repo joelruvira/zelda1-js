@@ -1,0 +1,16 @@
+{
+  "sram": "p08-items.sav",
+  "comment": "Monster rocks are parried by Link (CheckLinkCollisionPreinit @Parry).",
+  "reaches": {
+    "RoomId": [
+      120
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "events": {
+    "parries": 2,
+    "last": 1700
+  }
+}

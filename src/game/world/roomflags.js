@@ -1,6 +1,6 @@
-// Room flags (Z_07, Z_05). Package P14. Early port by the wave-3 integrator: these shared routines
-// are called on every room of the overworld/underworld (layout, kill counts, map, next room), so the
-// pure port cannot lay out a room without them (docs/PORT_MAP.md "rutinas compartidas").
+// Room flags (Z_07, Z_05). Package P14.
+// These shared routines are called on every room of the overworld/underworld (layout, kill counts,
+// map, next room, doors, secrets), see docs/PORT_MAP.md "rutinas compartidas".
 // Contracts (from the asm):
 //   GetRoomFlags():    returns A = flags of RoomId in the level block world flags;
 //                      Y = RoomId; [$00:01] = LevelInfo_WorldFlagsAddr (callers re-read Y as RoomId).
@@ -23,7 +23,7 @@ export function GetRoomFlags() {
 
 /** MarkRoomVisited (Z_07): sets the UW visit state ($20) in the room's flags. */
 export function MarkRoomVisited() {
-  // MarkRoomVisited (Z_07)
+  // MarkRoomVisited (Z_07); its RTS is the label Exit
   const a = GetRoomFlags() | 0x20;
   write((((ram[0x01] << 8) | ram[0x00]) + ram[RoomId]) & 0xffff, a);
 }

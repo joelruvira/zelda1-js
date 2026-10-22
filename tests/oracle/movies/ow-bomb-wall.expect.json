@@ -1,0 +1,12 @@
+{
+  "comment": "Rock wall bombed in room $76 (UpdateRockWall -> RevealAndFlagSecretTileObj).",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      118
+    ],
+    "Tune1Request": [
+      4
+    ]
+  }
+}

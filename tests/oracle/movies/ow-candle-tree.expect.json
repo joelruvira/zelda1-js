@@ -1,0 +1,12 @@
+{
+  "comment": "Tree burnt in room $78 (UpdateTree -> RevealAndFlagSecretStairsObj).",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      120
+    ],
+    "Tune1Request": [
+      4
+    ]
+  }
+}

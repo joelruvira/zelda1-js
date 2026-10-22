@@ -1,0 +1,23 @@
+{
+  "sram": "p14-items.sav",
+  "comment": "Forest maze: CheckMazes repeats $61 (NextRoomId = RoomId) and plays the secret tune.",
+  "reaches": {
+    "RoomId": [
+      97,
+      96
+    ],
+    "MazeStep": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "Tune1Request": [
+      4
+    ],
+    "GameMode": [
+      5,
+      7
+    ]
+  }
+}

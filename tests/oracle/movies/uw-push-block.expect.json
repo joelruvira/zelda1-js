@@ -1,0 +1,16 @@
+{
+  "comment": "Push block in room $42 of level 1.",
+  "sram": "p08-items.sav",
+  "reaches": {
+    "RoomId": [
+      66
+    ],
+    "BlockPushComplete": [
+      1
+    ],
+    "ObjState+11": [
+      1,
+      2
+    ]
+  }
+}

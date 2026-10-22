@@ -1,0 +1,20 @@
+{
+  "comment": "Old man with a hint in room $41 of level 1; hit with the sword.",
+  "sram": "p08-items.sav",
+  "reaches": {
+    "RoomId": [
+      65
+    ],
+    "ObjType+1": [
+      76
+    ],
+    "ObjState+1": [
+      0,
+      1,
+      2
+    ],
+    "PersonFireballsEnabled": [
+      16
+    ]
+  }
+}

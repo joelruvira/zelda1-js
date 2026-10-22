@@ -4,3 +4,7 @@ import { stubX } from '../stub.js';
 
 export const InitGanon = stubX('InitGanon');
 export const UpdateGanon = stubX('UpdateGanon');
+
+// Stub added by P10 (CheckPowerTriforceFanfare calls it); P22 replaces it.
+import { stub } from '../stub.js';
+export const ReplaceAshesPaletteRow = stub('ReplaceAshesPaletteRow');

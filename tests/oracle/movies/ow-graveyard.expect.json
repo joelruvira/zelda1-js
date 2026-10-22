@@ -1,0 +1,13 @@
+{
+  "comment": "Armos from a statue in $22; gravestone pushed in $21; ghinis from gravestones.",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      34,
+      33
+    ],
+    "ObjState+11": [
+      1
+    ]
+  }
+}

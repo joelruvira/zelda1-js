@@ -1,6 +1,6 @@
 {
   "comment": "Kills in $78/$68, back into $68 (in history), 6 new rooms and back to $68 and $78 (out of history).",
-  "sram": "out/sram/p08-items.sav",
+  "sram": "p08-items.sav",
   "reaches": {
     "RoomId": [
       120,

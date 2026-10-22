@@ -1,0 +1,17 @@
+{
+  "comment": "Pond fairy in $39: states 0 to 3, hearts orbiting.",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      57
+    ],
+    "ObjState+1": [
+      1,
+      2,
+      3
+    ],
+    "World_IsFillingHearts": [
+      64
+    ]
+  }
+}

@@ -197,6 +197,10 @@ export class Oracle {
  *     whole screen is backdrop). Here the column is cleared per rendered band with the backdrop
  *     colour, using the PPUMASK of that band. Only the "both hidden" case is modelled (Zelda writes
  *     PPUMASK $1E or $00); "background hidden, sprites shown" is left as jsnes draws it.
+ *  8. Greyscale (PPUMASK bit 0, Zelda's bomb flash UpdateBombFlashEffect): jsnes masks the palette
+ *     with $30 but paints the backdrop with a colour picked from the emphasis bits (black for Zelda)
+ *     in startFrame(). The hardware shows the backdrop as ($3F00 & $30) like any other pixel, so fixes
+ *     3 and 7 now also apply in greyscale mode (imgPalette[0] is already the masked colour).
  * The patched methods are rebuilt from jsnes' own source; if a jsnes upgrade changes the text, the
  * patch throws instead of silently doing nothing.
  */
@@ -237,10 +241,10 @@ export function patchJsnesPpu(ppu) {
   ppu.renderFramePartially = (startScan, scanCount) => {
     const first = Math.max(0, startScan);
     const end = Math.min(240, startScan + scanCount);
-    // Monochrome (greyscale) backdrops keep jsnes' own startFrame() fill.
-    if (ppu.f_dispType === 0 && end > first) ppu.buffer.fill(ppu.imgPalette[0], first << 8, end << 8);
+    // imgPalette already holds the greyscale ($30-masked) colours when PPUMASK bit 0 is set (fix 8).
+    if (end > first) ppu.buffer.fill(ppu.imgPalette[0], first << 8, end << 8);
     const result = render(startScan, scanCount);
-    if (ppu.f_dispType === 0 && ppu.f_bgClipping === 0 && ppu.f_spClipping === 0) {
+    if (ppu.f_bgClipping === 0 && ppu.f_spClipping === 0) {
       const c = ppu.imgPalette[0];
       for (let y = first; y < end; y++) ppu.buffer.fill(c, y << 8, (y << 8) + 8);
     }

@@ -1,0 +1,58 @@
+{
+  "comment": "Every usable item in room $77: sword shot, magic boomerang, bombs, arrows, candle, rod + book, bait, potion, recorder (whirlwind).",
+  "sram": "p09-items.sav",
+  "reaches": {
+    "SelectedItemSlot": [
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "ObjState+14": [
+      16,
+      17,
+      128
+    ],
+    "ObjState+15": [
+      16,
+      32,
+      40,
+      80,
+      128,
+      129
+    ],
+    "ObjState+16": [
+      18,
+      19,
+      20,
+      33,
+      34
+    ],
+    "ObjState+17": [
+      18,
+      19,
+      20,
+      33,
+      34
+    ],
+    "ObjState+18": [
+      16,
+      32,
+      49,
+      51
+    ],
+    "Potion": [
+      1
+    ],
+    "World_IsFillingHearts": [
+      1
+    ],
+    "FluteTimer": [
+      152
+    ]
+  }
+}

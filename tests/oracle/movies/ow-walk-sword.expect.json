@@ -1,6 +1,6 @@
 {
   "comment": "Sword swings (Link states $11, $31) and walking $77 -> $78 -> $77.",
-  "sram": "out/sram/p08-items.sav",
+  "sram": "p08-items.sav",
   "reaches": {
     "ObjState": [
       17,

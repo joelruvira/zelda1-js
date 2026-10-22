@@ -1,0 +1,19 @@
+{
+  "comment": "Kill monsters with the sword and the sword shot (full hearts) in $78 and $68.",
+  "sram": "p08-items.sav",
+  "reaches": {
+    "RoomId": [
+      119,
+      120,
+      104
+    ],
+    "ObjState+14": [
+      16,
+      17
+    ],
+    "ObjMetastate+1": [
+      16,
+      17
+    ]
+  }
+}

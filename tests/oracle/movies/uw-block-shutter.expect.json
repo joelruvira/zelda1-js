@@ -1,0 +1,21 @@
+{
+  "sram": "p08-items.sav",
+  "comment": "Level 1 room $42: the pushed block opens the shutters (TriggeredDoorCmd 6 -> 7 in the same frame).",
+  "reaches": {
+    "CurLevel": [
+      1
+    ],
+    "RoomId": [
+      66
+    ],
+    "BlockPushComplete": [
+      1
+    ],
+    "ShutterTrigger": [
+      1
+    ],
+    "TriggeredDoorCmd": [
+      7
+    ]
+  }
+}

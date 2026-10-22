@@ -1,0 +1,14 @@
+{
+  "comment": "Raft from the dock of $55 to $45 and back (UpdateDock states 0, 1, 2).",
+  "sram": "p16-items.sav",
+  "reaches": {
+    "RoomId": [
+      85,
+      69
+    ],
+    "ObjState+11": [
+      1,
+      2
+    ]
+  }
+}

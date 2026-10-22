@@ -1,0 +1,23 @@
+{
+  "sram": "p14-items.sav",
+  "comment": "Recorder warp to level 1 ($37), then the level 1 entrance (modes $10, 2, 3).",
+  "reaches": {
+    "RoomId": [
+      119,
+      55
+    ],
+    "CurLevel": [
+      0,
+      1
+    ],
+    "GameMode": [
+      5,
+      16,
+      2,
+      3
+    ],
+    "TargetMode": [
+      2
+    ]
+  }
+}
