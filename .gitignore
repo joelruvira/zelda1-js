@@ -1,4 +1,5 @@
-roms/
+roms/*
+!roms/.gitkeep
 *.nes
 reference/
 node_modules/

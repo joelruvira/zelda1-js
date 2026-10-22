@@ -1,50 +1,86 @@
-# zelda1-js
+<p align="center">
+  <img src="docs/assets/icon.svg" width="96" alt="">
+</p>
 
-Port rutina a rutina de **The Legend of Zelda** (NES, 1986) a JavaScript, para jugar en el navegador.
-Cada rutina 6502 del original se traduce a una función JavaScript con el mismo nombre. El estado del juego
-vive en las mismas direcciones de RAM que en la NES, así que el port se compara frame a frame con el
-original ejecutándose en un emulador: la RAM, la RAM de guardado y la imagen tienen que coincidir.
+<h1 align="center">zelda1-js</h1>
 
-> **En desarrollo.** El título, la historia, el menú de partidas y el registro de nombre están completos y
-> coinciden con el original. El overworld, las mazmorras, Link, los enemigos y los jefes se están portando.
-> El progreso está en [`docs/PLAN.md`](docs/PLAN.md) y [`docs/PORT_MAP.md`](docs/PORT_MAP.md).
+<p align="center">The Legend of Zelda (NES, 1986) reescrito en JavaScript para jugar en el navegador.</p>
 
-## Este repositorio no contiene datos de Nintendo
+---
 
-Necesitas **tu propia** ROM del juego: *The Legend of Zelda (USA) (PRG0)*, iNES, 128 KB de PRG con CHR-RAM.
-Los gráficos, mapas, textos y música se leen de ella al ejecutar. El repositorio no incluye la ROM, ni
-gráficos, ni música, ni tablas de datos copiadas del juego.
+Cada rutina del juego original se ha traducido una a una y se compara frame a frame con el juego real ejecutándose en un emulador. El objetivo es que sea idéntico: mismos gráficos, misma música, mismo comportamiento.
 
-## Jugar
+**Estado:** en desarrollo. Ya funcionan el título, la historia y el menú de partidas. El mundo, las mazmorras, los enemigos y los jefes están en camino.
 
-```sh
-npm start          # servidor local en http://localhost:8080 que abre el navegador
+## Cómo jugar
+
+No hace falta saber programar. Son cinco pasos y solo se hacen una vez.
+
+### 1. Instala Node.js
+
+Entra en [nodejs.org](https://nodejs.org), descarga la versión que pone **LTS** e instálala como cualquier otro programa, dándole a *Siguiente* hasta terminar.
+
+### 2. Descarga el juego
+
+En esta página, pulsa el botón verde **Code** y luego **Download ZIP**. Descomprime el archivo donde quieras, por ejemplo en el Escritorio. Te quedará una carpeta llamada `zelda1-js-main`.
+
+### 3. Pon tu ROM
+
+El juego necesita tu copia de *The Legend of Zelda* para la NES, versión **USA (PRG0)**, en formato `.nes`. Este proyecto no la incluye.
+
+Renómbrala a `zelda.nes` y métela en la carpeta `roms` que hay dentro de `zelda1-js-main`.
+
+### 4. Abre una terminal en la carpeta
+
+- **Mac:** haz clic derecho sobre la carpeta `zelda1-js-main` y elige **Servicios → Nuevo terminal en la carpeta**.
+- **Windows:** abre la carpeta `zelda1-js-main`, haz clic en la barra de direcciones de arriba, escribe `cmd` y pulsa Enter.
+
+Se abrirá una ventana negra donde se pueden escribir órdenes.
+
+### 5. Arranca el juego
+
+Escribe esto en la ventana negra y pulsa Enter:
+
+```
+npm start
 ```
 
-Pon tu ROM en `roms/zelda.nes` (ignorada por git) y se carga sola. También puedes arrastrarla a la página.
+El navegador se abrirá solo con el juego. Pulsa cualquier tecla para que empiece a sonar la música.
 
-| Tecla | Botón NES |
+Para cerrar el juego, cierra la ventana negra. Para volver a jugar otro día, repite solo los pasos 4 y 5.
+
+## Controles
+
+| Teclado | Mando de NES |
 |---|---|
 | Flechas | Cruceta |
 | X | A |
 | Z | B |
 | Enter | Start |
-| Shift / Espacio / Tab | Select |
-| W A S D, G, F, T, R | Mando 2 |
+| Espacio | Select |
 
-Las partidas se guardan en el navegador, igual que las guarda la memoria con pila del cartucho.
+También funciona con un mando conectado al ordenador.
 
-## Cómo está hecho
+**Para empezar una partida:** en el menú pulsa Espacio hasta llegar a *Register your name* y pulsa Enter. Elige las letras con las flechas y escríbelas con X. Pulsa Espacio hasta llegar a *End* y luego Enter. Ya puedes elegir tu partida y pulsar Start.
 
-- `src/core/`: carga de la ROM, RAM con la distribución de la NES, renderizador de la PPU, MMC1, mandos, bucle a 60,0988 Hz.
-- `src/audio/`: APU con precisión de ciclo (pulsos, triángulo, ruido, DMC) en un AudioWorklet.
-- `src/game/`: el juego portado, una función JS por cada rutina original.
-- `tools/oracle/`: ejecuta la ROM original en jsnes y compara el port con ella frame a frame.
-- `tests/`: `npm test` (los tests que necesitan la ROM se saltan si no está).
+## Partidas guardadas
 
-La referencia del port es el desensamblado comentado de A. Nuñez
-([aldonunez/zelda1-disassembly](https://github.com/aldonunez/zelda1-disassembly)), clonado en `reference/`
-(no versionado).
+Se guardan solas en el navegador, igual que en el cartucho original. Juega siempre desde el mismo navegador para no perderlas.
 
-*The Legend of Zelda* es una marca de Nintendo. Este es un proyecto de fans sin ánimo de lucro, sin
-relación con Nintendo ni respaldado por ella.
+## Problemas frecuentes
+
+**`npm` no se reconoce como un comando.** Node.js no se ha instalado bien. Repite el paso 1 y cierra y vuelve a abrir la ventana negra.
+
+**La página dice que no hay ROM.** Comprueba que el archivo se llama exactamente `zelda.nes` y está dentro de la carpeta `roms`.
+
+**La página avisa de que la ROM no es la versión correcta.** El juego está hecho para la versión USA PRG0. Otras versiones pueden fallar.
+
+## Para desarrolladores
+
+El código está en `src/`, una función JavaScript por cada rutina del juego original. Los tests se lanzan con `npm test`. El plan de trabajo y la arquitectura están en [`docs/`](docs).
+
+La referencia del port es el [desensamblado de A. Nuñez](https://github.com/aldonunez/zelda1-disassembly).
+
+---
+
+<sub>The Legend of Zelda es una marca de Nintendo. Proyecto de fans sin ánimo de lucro y sin relación con Nintendo. Este repositorio no contiene ningún dato del juego original.</sub>
