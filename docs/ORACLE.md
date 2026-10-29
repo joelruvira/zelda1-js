@@ -94,6 +94,12 @@ Por tanto:
   siguiente se pierde. Los frames lógicos solo cuentan NMIs, así que el lag **no** desalinea la
   comparación. La traza guarda en `videoFrame` el frame de vídeo en que empezó cada NMI
   (`trace-info.mjs` lista dónde hubo lag; p. ej. frames 2‑4 al arrancar, y en cada transición de modo).
+* **NMI anidada** (salas de juego con mucho lag, p. ej. nivel 8 sala `$5E` en `boss-gleeok4`): si una NMI
+  larga reactiva la NMI *dentro* del vblank siguiente (flag de vblank aún puesto), la segunda NMI se ejecuta
+  antes del `RTI` de la primera. El frame lógico k (primer `RTI`) contiene entonces dos NMIs de trabajo
+  (`FrameCounter` +2) y el k+1 ninguna (+0). El port (una NMI por `stepFrame`, sin modelo de ciclos;
+  `docs/TIMING.md`) va una NMI por detrás solo en el frame k y vuelve a coincidir en k+1.
+  `tests/game/p22-oracle.test.mjs` tolera exactamente esos frames.
 
 Ninguna lectura de registros hardware (`$2002`, `$2007`, `$4015`) del juego acaba en la RAM: la RAM
 depende solo de las entradas por NMI. Por eso la comparación de RAM es exacta e independiente de la
@@ -265,3 +271,34 @@ tools/oracle/
   testrom/                    mini ensamblador 6502 + ROM sintética MMC1 + su "port"
 tests/oracle/                 tests (node --test); los de ROM se saltan sin roms/zelda.nes
 ```
+
+## Batería (`tools/oracle/battery.mjs`)
+
+Pruebas intensivas del port completo (salida en `out/battery/`):
+
+```sh
+node tools/oracle/battery.mjs movies                 # lockstep de TODOS los movies, en paralelo (1 proceso por movie)
+node tools/oracle/battery.mjs movie <f.zmv>          # uno solo (--sram f.sav para forzar una SRAM)
+node tools/oracle/battery.mjs routines --n 5000 --scale 150 --seeds 0,1,2,3,4,5
+node tools/oracle/battery.mjs fuzz-gen [--frames 24000] [--only fuzz-ow]
+node tools/oracle/battery.mjs boot                   # arranque con SRAM vacía / basura / checksum o marcas rotas
+BATTERY=1 node --test tests/oracle/battery.test.mjs  # movies + boot como test (lento)
+```
+
+* **movies**: oráculo y port puro en *lockstep*; en **cada** frame compara RAM y SRAM (rangos de
+  `ignore.default.json`) y la **imagen completa** (filas 1-239, sin muestreo ni PNG). Cada frame distinto se
+  clasifica con pruebas sacadas de la propia ejecución del oráculo (escrituras a `$2000-$2007/$4014` con su
+  línea de raster, frames de vídeo que abarca cada NMI, `FrameCounter`):
+  `nested-nmi` (dos NMIs antes del primer RTI), `lag` (la NMI acaba en un frame de vídeo posterior al que
+  empezó), `split-63` (solo la fila 63; modo 7 con las escrituras del split en la fila 62-63, o modo 4 justo
+  tras el 7), `late-write` (RAM igual y todas las filas distintas por encima de la escritura de PPUMASK hecha
+  en zona visible, p. ej. frame 121 tras Start en el título) y `DEFECT` (cualquier otra cosa: código 1).
+  Algunos frames no tienen imagen en el oráculo (la NMI siguiente empieza antes de que se complete otro
+  frame de vídeo, p. ej. las NMIs anidadas): se listan en `noFb`.
+* **routines**: todos los tests rutina-contra-6502 de `tests/game` con `Pxx_N`/`W3_N`/`WAVE4_N`/`P04_N` = N,
+  `ROUTINES_SCALE` (multiplica los estados de los tests por semillas: P01, P03, P11, P23-P25) y
+  `ROUTINES_SEED` (desplaza todos los generadores aleatorios; 0 = los estados de siempre); los ficheros con
+  registro híbrido se ejecutan además integrados (`Pxx_REAL=1`).
+* **fuzz-gen**: `tests/oracle/movies/fuzz-*.zmv` = prefijo de un movie existente hasta un estado elegido
+  (overworld, mazmorras, segunda vuelta, Gleeok de 4 cabezas, Ganon, Aquamentus) + 24 000 frames de juego
+  semialeatorio (direcciones mantenidas, A/B, Start/Select ocasionales). Usan las `.sav` existentes.

@@ -1,0 +1,40 @@
+{
+  "comment": "Boss fight (P21): level 5, little digdogger, dodongo, digdogger (3), digdogger (1).",
+  "sram": "p20-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      5
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "monsterTypes": [
+    10,
+    11,
+    14,
+    16,
+    19,
+    22,
+    24,
+    26,
+    27,
+    46,
+    48,
+    49,
+    56,
+    57
+  ],
+  "bossTypes": [
+    24,
+    49,
+    56,
+    57
+  ],
+  "events": [
+    "boss room via NNENNNWW f6764",
+    "digdogger split f6968",
+    "digdoggers killed f7063"
+  ]
+}

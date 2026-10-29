@@ -45,10 +45,15 @@ const TYPES = [0x01, 0x05, 0x06, 0x0b, 0x0c, 0x12, 0x13, 0x16, 0x17, 0x27, 0x2e,
 const pick = (r, arr) => arr[r.int(arr.length)];
 const near = (r, v, d) => (v + r.int(2 * d + 1) - d) & 0xff;
 
+let codeBase = null; // RAM_01_CODE as copied at boot
 /** A random state with Link's weapons and Link close to monster `x`. */
 function randomState(r, x) {
   for (let i = 0; i < 0x800; i++) ram[i] = r.byte();
   for (let i = 0; i < SRAM_CODE; i++) sram[i] = r.byte();
+  // A case may write anywhere (random pointers), also into RAM_01_CODE (port and original alike); the
+  // original would then run corrupted code in a later case (battery: P06 Walker_Move case 2465, seed 1).
+  codeBase ??= Uint8Array.from(sram.subarray(SRAM_CODE));
+  sram.set(codeBase, SRAM_CODE);
   const mx = ram[V.ObjX + x];
   const my = ram[V.ObjY + x];
   for (const s of [0, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12]) {

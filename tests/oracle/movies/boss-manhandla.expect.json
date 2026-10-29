@@ -1,0 +1,30 @@
+{
+  "comment": "Boss fight (P21): level 3, manhandla.",
+  "sram": "p20-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      3
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "monsterTypes": [
+    10,
+    11,
+    14,
+    19,
+    46,
+    60,
+    73,
+    74
+  ],
+  "bossTypes": [
+    60
+  ],
+  "events": [
+    "boss room via WNNNEE f5047",
+    "manhandla killed f5344"
+  ]
+}

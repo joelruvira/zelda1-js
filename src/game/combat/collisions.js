@@ -13,19 +13,11 @@ import {
   ShotCollidesWithLink, InvClock, InvMagicShield, InvArrow, LinkParalyzed, Items, Tune0Request,
 } from '../../core/vars.js';
 import { Abs } from '../movement/math.js';
-import { stub } from '../stub.js';
-import * as Shots from '../weapons/shots.js';
+import { HandleShotBlocked } from '../weapons/shots.js';
 import { HandleMonsterWeaponCollision, DealDamage, ParryOrShove, PlayParryTune } from './damage.js';
 import { HarmLink, BeginShove } from './link-harm.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
-
-// HandleShotBlocked (Z_07) belongs to P09 (weapons/shots.js), ported in the same wave. A namespace
-// import keeps this module loadable whether or not that export exists yet.
-const HandleShotBlockedStub = stub('HandleShotBlocked');
-function HandleShotBlocked(x, a, y) {
-  return Shots.HandleShotBlocked ? Shots.HandleShotBlocked(x) : HandleShotBlockedStub(a, x, y);
-}
 
 /**
  * CheckMonsterCollisions (Z_01). X = monster slot. Checks Link's weapons against the monster (unless
@@ -187,7 +179,7 @@ export function CheckMonsterSwordShotOrMagicShotCollision(x, y) {
   // @CheckCollision
   CheckMonsterShotCollision(dmg, x);
   if (ram[0x06] === 0) return;
-  HandleShotBlocked(0x0e, x, 0x0e); // TXA/PHA ... PLA/TAX keep X (A = monster slot, Y = shot slot)
+  HandleShotBlocked(0x0e); // X = shot slot; TXA/PHA ... PLA/TAX keep the monster slot
 }
 
 /**

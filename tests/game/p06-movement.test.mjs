@@ -40,10 +40,15 @@ const DIRS = [0, 1, 2, 4, 8];
 
 function pick(r, arr) { return arr[r.int(arr.length)]; }
 
+let codeBase = null; // RAM_01_CODE as copied at boot
 /** A random but plausible game state for object `x`. */
 function randomState(r, x) {
   for (let i = 0; i < 0x800; i++) ram[i] = r.byte();
   for (let i = 0; i < SRAM_CODE; i++) sram[i] = r.byte();
+  // A case may write anywhere (random pointers), also into RAM_01_CODE (port and original alike); the
+  // original would then run corrupted code in a later case (battery: P06 Walker_Move case 2465, seed 1).
+  codeBase ??= Uint8Array.from(sram.subarray(SRAM_CODE));
+  sram.set(codeBase, SRAM_CODE);
   const OW = r.chance(0.5);
   ram[V.CurLevel] = OW ? 0 : 1 + r.int(9);
   // Room bounds as SetupObjRoomBounds leaves them (or random).
@@ -168,8 +173,9 @@ const cases = [
 
 const N = Number(process.env.P06_N ?? 400);
 for (const [name, regsOf, port, cmp, tweak] of cases) {
-  test(`P06 ${name} matches the original`, { skip }, () => {
+  test(`P06 ${name} matches the original`, { skip }, async () => {
     const r = rng(0x5060 + name.length * 977 + name.charCodeAt(0));
+    let skipped = 0;
     for (let i = 0; i < N; i++) {
       const g = regsOf(r);
       randomState(r, g.x ?? 0);
@@ -181,7 +187,19 @@ for (const [name, regsOf, port, cmp, tweak] of cases) {
       const stubbed = Object.keys(H.calls).filter((k) => H.calls[k] !== before[k]);
       const p = snapshot();
       restore(start);
-      const o = H.runOriginal(name, { a: g.a ?? 0, x: g.x ?? 0, y: g.y ?? 0 });
+      let o;
+      try {
+        o = H.runOriginal(name, { a: g.a ?? 0, x: g.x ?? 0, y: g.y ?? 0 });
+      } catch (e) {
+        if (process.env.P06_DUMP) { // start state of the case (RAM 2 KB + SRAM up to RAM_01_CODE + bank, A, X, Y)
+          (await import('node:fs')).writeFileSync(process.env.P06_DUMP, Buffer.concat([start.ram, start.sram, Buffer.from([start.bank, g.a ?? 0, g.x ?? 0, g.y ?? 0])]));
+        }
+        // A random state can make the original write into $8000-$FFFF through a random pointer: the
+        // MMC1 serial register is then misaligned and the next SwitchBank maps a wrong bank, so the
+        // original runs garbage (the port's switchBank is not serial). Battery: Walker_Move seeds 2/4.
+        if (/did not return|Game crashed/.test(e.message)) { skipped++; continue; }
+        throw new Error(`${name} case ${i} regs ${JSON.stringify(g)}: original: ${e.message}`);
+      }
       const d = diffs(p, snapshot());
       const m = cmp(ret, o);
       if (m) d.push(m);
@@ -192,6 +210,7 @@ for (const [name, regsOf, port, cmp, tweak] of cases) {
       }
       assert.deepEqual(d, [], `${name} case ${i} regs ${JSON.stringify(g)}`);
     }
+    assert.ok(skipped <= N / 100, `${name}: ${skipped}/${N} random states crash the original`);
   });
 }
 

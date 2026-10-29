@@ -16,7 +16,6 @@ import { HideAllSprites } from '../boot.js';
 import { EndGameMode } from '../modes/dispatch.js';
 import { WriteBlankPrioritySprites } from '../draw/sprites.js';
 import { Negate } from '../movement/math.js';
-import { stub } from '../stub.js';
 import * as mode5 from '../modes/mode5-play.js';
 import * as mode11 from '../modes/mode11-death.js';
 import {
@@ -26,12 +25,10 @@ import {
   HasCompass, HasMap, Submenu_CueTransferRowUW, Submenu_CueTransferRowOW,
 } from './map.js';
 
-// Routines of other packages that may not be exported yet: UpdateHeartsAndRupees (P05, same wave)
-// and SilenceSound (P25, later wave). Use the real port as soon as its module exports it.
-const fallbacks = {};
-const external = (mod, name) => (...args) => (mod[name] ?? (fallbacks[name] ??= stub(name)))(...args);
-const UpdateHeartsAndRupees = external(mode5, 'UpdateHeartsAndRupees');
-const SilenceSound = external(mode11, 'SilenceSound');
+// UpdateHeartsAndRupees (P05) and SilenceSound (P25): namespace imports, resolved at call time
+// (mode5-play.js and mode11-death.js import this module indirectly).
+const UpdateHeartsAndRupees = (...args) => mode5.UpdateHeartsAndRupees(...args);
+const SilenceSound = (...args) => mode11.SilenceSound(...args);
 
 const EF = 0xef; // [$EF]: item search direction of the previous frame (unnamed in Variables.inc)
 

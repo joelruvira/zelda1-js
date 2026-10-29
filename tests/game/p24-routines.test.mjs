@@ -31,8 +31,12 @@ if (canRunHybrid) {
   machine = createMachine(loadRom(readFileSync(ROM_PATH)));
 }
 
+// ROUTINES_SEED (battery): shifts every random stream; 0 = the default states.
+const SEED_OFFSET = Number(process.env.ROUTINES_SEED ?? 0) >>> 0;
+// ROUTINES_SCALE (battery): multiplies the number of random states per routine.
+const ROUTINES_SCALE = Math.max(1, Number(process.env.ROUTINES_SCALE ?? 1));
 function rng(seed) {
-  let s = seed >>> 0 || 1;
+  let s = (seed + Math.imul(SEED_OFFSET, 0x9e3779b1)) >>> 0 || 1;
   const next = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s; };
   return { byte: () => next() & 0xff, int: (n) => next() % n };
 }
@@ -80,7 +84,7 @@ function assertSame(port, orig, what) {
 
 /** Random state -> run the original and the port from it -> compare everything. */
 function check(name, fn, { seeds = 12, prepare = () => {}, regs = () => ({}), cmpRet } = {}) {
-  for (let seed = 1; seed <= seeds; seed++) {
+  for (let seed = 1; seed <= seeds * ROUTINES_SCALE; seed++) {
     const r = rng(seed * 7919 + name.length * 31);
     for (let i = 0; i < 0x800; i++) ram[i] = r.byte();
     for (let i = 0; i < 0x2000; i++) sram[i] = r.byte();

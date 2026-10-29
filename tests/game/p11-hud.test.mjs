@@ -46,8 +46,12 @@ async function setup() {
   ready = true;
 }
 
+// ROUTINES_SEED (battery): shifts every random stream; 0 = the default states.
+const SEED_OFFSET = Number(process.env.ROUTINES_SEED ?? 0) >>> 0;
+// ROUTINES_SCALE (battery): multiplies the number of random states per routine.
+const ROUTINES_SCALE = Math.max(1, Number(process.env.ROUTINES_SCALE ?? 1));
 function rng(seed) {
-  let s = seed >>> 0 || 1;
+  let s = (seed + Math.imul(SEED_OFFSET, 0x9e3779b1)) >>> 0 || 1;
   const next = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s; };
   return { byte: () => next() & 0xff, int: (n) => next() % n, chance: (p) => next() / 0x100000000 < p };
 }
@@ -94,7 +98,7 @@ function diff(a, b) {
  */
 function check(name, fn, { seed = 1, n = 300, fix, regs = () => ({}), bank = 5, cmpA, cmpY } = {}) {
   const r = rng(seed);
-  for (let k = 0; k < n; k++) {
+  for (let k = 0; k < n * ROUTINES_SCALE; k++) {
     randomState(r, fix);
     const rg = regs(r);
     switchBank(bank);

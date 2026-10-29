@@ -1,0 +1,56 @@
+{
+  "sram": "p22-items.sav",
+  "monsterTypes": [
+    1,
+    2,
+    10,
+    14,
+    15,
+    16,
+    17,
+    19,
+    23,
+    26,
+    27,
+    31,
+    32,
+    35,
+    36,
+    37,
+    38,
+    43,
+    46,
+    58,
+    62,
+    64,
+    71,
+    72,
+    73,
+    74,
+    75,
+    77
+  ],
+  "bossTypes": [
+    37,
+    38,
+    62,
+    71,
+    72
+  ],
+  "events": [
+    "potion f21072",
+    "potion f30117",
+    "patra killed f32543",
+    "ganon shot with the silver arrow f33816",
+    "triforce of power f34296"
+  ],
+  "comment": "P22 boss-ganon.",
+  "reaches": {
+    "CurLevel": [
+      9
+    ],
+    "GameMode": [
+      5
+    ]
+  }
+}

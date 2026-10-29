@@ -208,8 +208,8 @@ export function Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(a, x) {
 /** X object index. @returns A = 0; [00] X, [01] Y, [0F] = 0 */
 export function Anim_FetchObjPosForSpriteDescriptor(x) {
   // Anim_FetchObjPosForSpriteDescriptor (Z_07)
-  ram[0x00] = ram[ObjX + x];
-  ram[0x01] = ram[ObjY + x];
+  ram[0x00] = ram[(ObjX + x) & 0xff]; // LDA zp,X wraps in page 0 (out-of-range X, e.g. X = $FF)
+  ram[0x01] = ram[(ObjY + x) & 0xff];
   ram[0x0f] = 0;
   return 0;
 }

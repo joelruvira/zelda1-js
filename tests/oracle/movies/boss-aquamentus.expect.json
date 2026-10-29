@@ -1,0 +1,36 @@
+{
+  "comment": "Boss fight (P21): level 1, aquamentus.",
+  "sram": "p20-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      1
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "monsterTypes": [
+    2,
+    3,
+    4,
+    6,
+    8,
+    10,
+    14,
+    16,
+    21,
+    26,
+    39,
+    42,
+    46,
+    61
+  ],
+  "bossTypes": [
+    61
+  ],
+  "events": [
+    "boss room via NNNEEN f7725",
+    "aquamentus killed f7873"
+  ]
+}

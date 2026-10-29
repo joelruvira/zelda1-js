@@ -1,0 +1,22 @@
+{
+  "sram": "p20-items-q2.sav",
+  "comment": "Battery fuzz movie (tools/oracle/battery.mjs): uw-enemies-b2 prefix to frame 2529 + 24000 semi-random frames.",
+  "prefixEnd": 2529,
+  "reaches": {
+    "GameMode": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      16
+    ],
+    "CurLevel": [
+      0,
+      4
+    ]
+  }
+}

@@ -1,7 +1,9 @@
 // P05 objects — room history and kill counts (Z_07, Z_05): which rooms were visited recently,
 // and how many foes of a room stay defeated (room flags of the world, LevelKillCounts).
 
-import { ram, cpu, peek, poke, word } from '../../core/ram.js';
+import { ram, cpu, word } from '../../core/ram.js';
+// (ptr),Y accesses go through the bus like the original's LDA/STA ($00),Y (the pointer is SRAM in play).
+import { read, write } from '../../core/bus.js';
 import {
   ForceSwordShot, RoomHistory, RoomId, RoomKillCount, RoomObjCount, RoomObjTemplateType,
   LevelKillCounts,
@@ -36,7 +38,7 @@ export function ModifyObjCountByHistoryOW() {
     // Not found: if all foes were defeated, reset the kill count in the room flags.
     if ((GetRoomFlags() & 0x07) === 0x07) {
       const addr = flagsAddr();
-      poke(addr, peek(addr) & 0xf8);
+      write(addr, read(addr) & 0xf8);
       return;
     }
   }
@@ -61,7 +63,7 @@ export function SaveKillCountOW() {
   // SaveKillCountOW (Z_05)
   ram[0x02] = GetRoomFlags() & 0x07;
   const addr = flagsAddr();
-  poke(addr, peek(addr) & 0xf8);
+  write(addr, read(addr) & 0xf8);
   let a = ram[RoomKillCount];
   if (a < ram[RoomObjCount]) {
     a = ((a & 0x07) + ram[0x02]) & 0xff; // CLC / ADC
@@ -69,7 +71,7 @@ export function SaveKillCountOW() {
   } else {
     a = 0x07; // @LimitCount
   }
-  poke(addr, a | peek(addr));
+  write(addr, a | read(addr));
 }
 
 /** True if the object list ID refers to non-recurring foes ($32-$48 except $3A, $3B). */
@@ -89,7 +91,7 @@ export function ModifyObjCountByHistoryUW() {
       if (isNonRecurring(ram[0x02])) return resetObjCount();
       // Recurring foes: reset the kill count in the room flags and the level block.
       const addr = flagsAddr();
-      poke(addr, peek(addr) & 0x3f);
+      write(addr, read(addr) & 0x3f);
       ram[LevelKillCounts + ram[RoomId]] = 0x00;
       return;
     }
@@ -112,7 +114,7 @@ export function SaveKillCountUW() {
   // SaveKillCountUW (Z_05)
   const flags = GetRoomFlags() & 0x3f;
   const addr = flagsAddr();
-  poke(addr, flags);
+  write(addr, flags);
   let a = ram[RoomObjCount];
   let max = a === 0;
   if (!max) {
@@ -135,5 +137,5 @@ export function SaveKillCountUW() {
     a = cpu.ror(a);
   }
   // @CombineWithFlags
-  poke(addr, a | peek(addr));
+  write(addr, a | read(addr));
 }

@@ -1,0 +1,19 @@
+{
+  "comment": "Die 3 times: CONTINUE (cursor cycled), SAVE (mode $D), RETRY (mode 0 submode 1); 3 deaths counted (2 after RETRY reloads the saved file).",
+  "reaches": {
+    "GameMode": [
+      5,
+      17,
+      8,
+      3,
+      13,
+      1,
+      0
+    ],
+    "DeathCounts": [
+      1,
+      2,
+      3
+    ]
+  }
+}

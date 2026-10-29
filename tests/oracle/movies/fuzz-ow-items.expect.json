@@ -1,0 +1,20 @@
+{
+  "sram": "p18-items.sav",
+  "comment": "Battery fuzz movie (tools/oracle/battery.mjs): ow-enemies-tour prefix to frame 304 + 24000 semi-random frames.",
+  "prefixEnd": 304,
+  "reaches": {
+    "GameMode": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "CurLevel": [
+      0
+    ]
+  }
+}

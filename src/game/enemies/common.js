@@ -17,12 +17,10 @@ import {
 import { Obj_Shove } from '../movement/shove.js';
 import { Walker_Move } from '../movement/walker.js';
 import * as goriya from './goriya.js';
-import { stubX } from '../stub.js';
 
-const walkerSetInputDirStub = stubX('L_Walker_SetInputDirAndTryShootingBoomerang');
-/** L_Walker_SetInputDirAndTryShootingBoomerang (Z_04, P19): the real port when it exists. */
+/** L_Walker_SetInputDirAndTryShootingBoomerang (Z_04, P19 goriya.js): namespace import resolved at call time. */
 function L_Walker_SetInputDirAndTryShootingBoomerang(x) {
-  return (goriya.L_Walker_SetInputDirAndTryShootingBoomerang ?? walkerSetInputDirStub)(x);
+  return goriya.L_Walker_SetInputDirAndTryShootingBoomerang(x);
 }
 
 /** PlayBossHitCryIfNeeded (Z_04). X = boss: the boss cry when its invincibility timer is exactly $10. */

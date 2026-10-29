@@ -177,6 +177,10 @@ const cases = [
       setCur(r, g);
       ram[V.ObjType + g.x] = r.int(0x80);
       g.a = ram[V.ObjType + g.x];
+      // UpdateGleeok takes its neck count from ObjType[1] (the gleeok always lives in slot 1, types
+      // $42-$45). A larger ObjType[1] indexes past the neck address tables and reads open bus ($45xx)
+      // and PPU registers, which the port does not model (battery: case 554 of seed 0, N=5000).
+      if (g.a >= 0x42 && g.a <= 0x45 && (ram[V.ObjType + 1] < 0x42 || ram[V.ObjType + 1] > 0x45)) ram[V.ObjType + 1] = 0x42 + r.int(4);
       if (r.chance(0.5)) ram[V.ObjUninitialized + g.x] = 0;
     }],
   ['RunCrossRoomTasksAndBeginUpdateMode', () => ({}), () => CR.RunCrossRoomTasksAndBeginUpdateMode(), reg('a'),
@@ -185,7 +189,7 @@ const cases = [
 
 const N = Number(process.env.P05_N ?? 300);
 for (const [name, regsOf, port, cmp, tweak] of cases) {
-  test(`P05 ${name} matches the original`, { skip }, () => {
+  test(`P05 ${name} matches the original`, { skip }, async () => {
     const r = rng(0x5050 + name.length * 977 + name.charCodeAt(0));
     let skipped = 0;
     for (let i = 0; i < N; i++) {
@@ -223,6 +227,9 @@ for (const [name, regsOf, port, cmp, tweak] of cases) {
       const m = cmp(ret, o);
       if (m) d.push(m);
       if (d.length) d.push(`stubs run as original: ${stubbed.join(',') || 'none'}`);
+      if (d.length && process.env.P05_DUMP) { // start state of the failing case (RAM 2 KB + SRAM up to RAM_01_CODE)
+        (await import('node:fs')).writeFileSync(process.env.P05_DUMP, Buffer.concat([start.ram, start.sram, Buffer.from([start.bank, g.a ?? 0, g.x ?? 0, g.y ?? 0])]));
+      }
       if (d.length && process.env.P05_DEBUG) {
         for (const v of (process.env.P05_DEBUG).split(',')) d.push(`${v} = ${start.ram[V[v]]?.toString(16)}`);
       }

@@ -1,0 +1,44 @@
+{
+  "sram": "p22-items.sav",
+  "monsterTypes": [
+    2,
+    3,
+    4,
+    10,
+    11,
+    12,
+    14,
+    16,
+    22,
+    26,
+    27,
+    43,
+    46,
+    48,
+    60,
+    69,
+    70
+  ],
+  "bossTypes": [
+    69,
+    70
+  ],
+  "events": [
+    "tree burnt in $6d f5452",
+    "room $3c via NNNNE+A f10961",
+    "gleeok killed f11617"
+  ],
+  "comment": "Boss fight (P22): level 8, room $3c.",
+  "reaches": {
+    "CurLevel": [
+      0,
+      8
+    ],
+    "RoomId": [
+      60
+    ],
+    "GameMode": [
+      5
+    ]
+  }
+}

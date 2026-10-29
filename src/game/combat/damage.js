@@ -6,18 +6,10 @@ import {
   ObjInvincibilityMask, ObjInvincibilityTimer, ObjType, ObjDir, ObjHP, ObjStunTimer,
   Tune0Request, WorldKillCount, HelpDropCount, HelpDropValue,
 } from '../../core/vars.js';
-import { stub } from '../stub.js';
-import * as Gohma from '../bosses/gohma.js';
+import { Gohma_HandleWeaponCollision } from '../bosses/gohma.js';
 import { UpdateDeadDummy } from '../objects/metaobject.js';
 import { SetShoveInfoWith0 } from '../movement/shove.js';
 import { BeginShove } from './link-harm.js';
-
-// Gohma_HandleWeaponCollision (Z_04) belongs to P21 (bosses/gohma.js, a later wave). A namespace
-// import keeps this module loadable whether or not that export exists yet. Called with X, Y.
-const GohmaStub = stub('Gohma_HandleWeaponCollision');
-function Gohma_HandleWeaponCollision(x, y) {
-  return Gohma.Gohma_HandleWeaponCollision ? Gohma.Gohma_HandleWeaponCollision(x, y) : GohmaStub(ram[ObjType + x], x, y);
-}
 
 /**
  * HandleMonsterWeaponCollision (Z_01). X = monster slot, Y = weapon slot, [07]/[09] set.

@@ -1,0 +1,22 @@
+{
+  "sram": "p08-items.sav",
+  "comment": "Battery fuzz movie (tools/oracle/battery.mjs): uw-level1-full prefix to frame 2377 + 24000 semi-random frames.",
+  "prefixEnd": 2377,
+  "reaches": {
+    "GameMode": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      16
+    ],
+    "CurLevel": [
+      0,
+      1
+    ]
+  }
+}

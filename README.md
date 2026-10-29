@@ -10,7 +10,7 @@
 
 Cada rutina del juego original se ha traducido una a una y se compara frame a frame con el juego real ejecutándose en un emulador. El objetivo es que sea idéntico: mismos gráficos, misma música, mismo comportamiento.
 
-**Estado:** en desarrollo. Ya funcionan el título, el menú de partidas, todo el mundo exterior y los enemigos de las mazmorras. Los jefes, Ganon y el final están en camino.
+**Estado:** el juego completo ya funciona, con las dos misiones, todos los jefes y el final. Falta el último ajuste para que la imagen sea idéntica píxel a píxel en todos los frames.
 
 ## Cómo jugar
 

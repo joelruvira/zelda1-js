@@ -1,0 +1,38 @@
+{
+  "sram": "p22-items.sav",
+  "monsterTypes": [
+    10,
+    14,
+    18,
+    19,
+    26,
+    27,
+    43,
+    46,
+    53,
+    60,
+    67,
+    70
+  ],
+  "bossTypes": [
+    67,
+    70
+  ],
+  "events": [
+    "room $13 via NNWNNNNEE f8113",
+    "gleeok killed f8921"
+  ],
+  "comment": "Boss fight (P22): level 4, room $13.",
+  "reaches": {
+    "CurLevel": [
+      0,
+      4
+    ],
+    "RoomId": [
+      19
+    ],
+    "GameMode": [
+      5
+    ]
+  }
+}

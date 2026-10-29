@@ -1,0 +1,30 @@
+{
+  "sram": "p22-items.sav",
+  "monsterTypes": [
+    6,
+    10,
+    40,
+    46,
+    65
+  ],
+  "bossTypes": [
+    65
+  ],
+  "events": [
+    "room $3e via NENN f2940",
+    "moldorm killed f3215"
+  ],
+  "comment": "Boss fight (P22): level 2, room $3e.",
+  "reaches": {
+    "CurLevel": [
+      0,
+      2
+    ],
+    "RoomId": [
+      62
+    ],
+    "GameMode": [
+      5
+    ]
+  }
+}

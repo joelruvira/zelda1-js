@@ -35,6 +35,7 @@ export async function createP08Oracle() {
 
   return {
     rom,
+    nes, // debugging aid (write/PC tracing)
     /** SRAM image with RAM_01_CODE in place (what CopyCommonCodeToRam leaves). */
     baseSram() {
       const sram = new Uint8Array(0x2000);
@@ -48,6 +49,12 @@ export async function createP08Oracle() {
       mem.set(sramState, 0x6000);
       nes.mmap.regBufferCounter = 0; // an aborted run may have left a serial MMC1 write half done
       nes.mmap.regBuffer = 0;
+      nes.mmap.prgSwitchingArea = 1; // Zelda's MMC1 control: 16 KB at $8000, $C000 fixed
+      nes.mmap.prgSwitchingSize = 1;
+      cpu.F_DECIMAL = 0; // flags as a JSR from the game leaves them (a random run may have set D)
+      cpu.F_INTERRUPT = 1;
+      cpu.F_INTERRUPT_NEW = 1;
+      cpu.irqRequested = false;
       nes.mmap.loadRomBank(addr >= 0x8000 && addr < 0xc000 ? own : bank, 0x8000);
       nes.mmap.loadRomBank(7, 0xc000);
       cpu.REG_ACC = a;

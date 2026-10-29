@@ -14,7 +14,7 @@ import {
 
 const ok = await canRunCpuOracle();
 const skip = !ok && 'needs roms/zelda.nes and tools/oracle jsnes';
-const N = 300;
+const N = Number(process.env.P04_N ?? 300);
 
 // Random RAM with the fields that select code paths biased toward realistic values.
 function randomState(r, { x = 0 } = {}) {

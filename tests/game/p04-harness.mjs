@@ -74,9 +74,11 @@ export function ramDiff(port, orig, max = 8) {
   return out;
 }
 
+// ROUTINES_SEED (battery): shifts every random stream; 0 = the default states.
+const SEED_OFFSET = Number(process.env.ROUTINES_SEED ?? 0) >>> 0;
 /** Deterministic PRNG (xorshift32) for reproducible random states. */
 export function rng(seed) {
-  let s = seed >>> 0 || 1;
+  let s = (seed + Math.imul(SEED_OFFSET, 0x9e3779b1)) >>> 0 || 1;
   const next = () => {
     s ^= s << 13; s >>>= 0;
     s ^= s >>> 17;

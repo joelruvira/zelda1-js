@@ -43,8 +43,10 @@ export function ResetShoveInfo(x) {
 /** SetShoveInfoWith0 (Z_07). A = 0, X = object. @returns A */
 export function SetShoveInfoWith0(a, x) {
   // SetShoveInfoWith0 (Z_07)
-  ram[ObjShoveDir + x] = a;
-  ram[ObjShoveDistance + x] = a;
+  // STA zp,X: wraps inside page 0 (only an out-of-range X reaches it; battery: P22 Ganon_CheckCollisions
+  // with X = a random CurObjIndex, seed 1 case 1780).
+  ram[(ObjShoveDir + x) & 0xff] = a;
+  ram[(ObjShoveDistance + x) & 0xff] = a;
   return a;
 }
 

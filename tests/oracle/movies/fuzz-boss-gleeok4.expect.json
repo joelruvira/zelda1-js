@@ -1,0 +1,26 @@
+{
+  "sram": "p22-items.sav",
+  "comment": "Battery fuzz movie (tools/oracle/battery.mjs): boss-gleeok4 prefix to frame 10950 + 24000 semi-random frames.",
+  "prefixEnd": 10950,
+  "reaches": {
+    "GameMode": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      16,
+      17
+    ],
+    "CurLevel": [
+      0,
+      8
+    ]
+  }
+}

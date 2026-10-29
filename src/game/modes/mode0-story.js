@@ -153,27 +153,29 @@ export function ProcessDemoLineItems() {
   let y = ram[DemoLineIndex];
   if ((table(rom(), 'DemoLineAttrs').byte(y) & 0x20) === 0) return;
   // @MakeObject: look for the first disabled object (no bound, like the original).
+  // ObjState/ObjY/ObjX are zero-page arrays: LDA/STA zp,X wraps inside page 0 when X goes past 0.
+  const zp = (base, i) => (base + i) & 0xff;
   let x = 0x0a;
-  while (ram[ObjState + x] === 0) x = (x - 1) & 0xff;
+  while (ram[zp(ObjState, x)] === 0) x = (x - 1) & 0xff;
   // @SetUpObject
   const left = table(rom(), 'DemoLeftItemIds');
   y = ram[DemoItemRow];
   ram[DemoItemIds + x] = left.byte(y); // item on the left
-  ram[ObjY + x] = 0xef; // bottom of the screen
-  ram[ObjX + x] = table(rom(), 'DemoItemColumnX1').byte(0);
-  ram[ObjState + x] = 0x00;
+  ram[zp(ObjY, x)] = 0xef; // bottom of the screen
+  ram[zp(ObjX, x)] = table(rom(), 'DemoItemColumnX1').byte(0);
+  ram[zp(ObjState, x)] = 0x00;
   if (ram[DemoItemIds + x] >= 0x30) {
-    ram[ObjX + x] = 0x68; // @CenterLink: Link's special item is centered
+    ram[zp(ObjX, x)] = 0x68; // @CenterLink: Link's special item is centered
   } else {
     x = (x - 1) & 0xff; // another object for the item on the right
     ram[DemoItemIds + x] = table(rom(), 'DemoRightItemIds').byte(y);
-    ram[ObjY + x] = 0xef;
-    ram[ObjX + x] = table(rom(), 'DemoItemColumnX2').byte(0);
-    ram[ObjState + x] = 0x00;
+    ram[zp(ObjY, x)] = 0xef;
+    ram[zp(ObjX, x)] = table(rom(), 'DemoItemColumnX2').byte(0);
+    ram[zp(ObjState, x)] = 0x00;
     if (left.byte(y) === 0x1b) {
       // The triforce is in both columns: center both (overlapping) objects.
-      ram[ObjX + x] = 0x78;
-      ram[ObjX + 1 + x] = 0x78;
+      ram[zp(ObjX, x)] = 0x78;
+      ram[zp(ObjX + 1, x)] = 0x78;
       ram[0x0430] = 0x00; // UNKNOWN: doesn't seem to be used
     }
   }

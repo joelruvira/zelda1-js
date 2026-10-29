@@ -1,0 +1,38 @@
+{
+  "comment": "Boss fight (P21): level 6, blue gohma.",
+  "sram": "p20-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      6
+    ],
+    "GameMode": [
+      5
+    ]
+  },
+  "monsterTypes": [
+    2,
+    10,
+    14,
+    16,
+    18,
+    19,
+    23,
+    26,
+    27,
+    35,
+    36,
+    43,
+    46,
+    52,
+    73,
+    74
+  ],
+  "bossTypes": [
+    52
+  ],
+  "events": [
+    "boss room via +BSW f12169",
+    "gohma killed f12442"
+  ]
+}
