@@ -1,0 +1,49 @@
+{
+  "comment": "Underworld monsters B (P20).",
+  "sram": "p20-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      9,
+      6,
+      1
+    ],
+    "GameMode": [
+      3,
+      5,
+      12
+    ]
+  },
+  "monsterTypes": [
+    1,
+    2,
+    3,
+    4,
+    6,
+    8,
+    10,
+    14,
+    15,
+    16,
+    17,
+    19,
+    21,
+    26,
+    27,
+    31,
+    32,
+    35,
+    36,
+    39,
+    42,
+    43,
+    46,
+    58,
+    64,
+    73,
+    75
+  ],
+  "events": [
+    "wallmaster carried Link to the entrance f30222"
+  ]
+}

@@ -79,7 +79,8 @@ export function L_Walker_SetInputDirAndTryShootingBoomerang(x) {
   if (ram[ObjTimer + x] !== 0) return;
   ram[0x00] = a;
   if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return;
-  const r = _ShootIfWanted(ram[0x00], x, t);
+  // Y = ObjTimer,X (LDY ObjTimer, X above) = 0, passed through on failure.
+  const r = _ShootIfWanted(ram[0x00], x, 0x00);
   if (!r.c) return;
   x = r.x;
   const y = r.y;

@@ -1,13 +1,17 @@
-// P19 — enemies/zol-gel (Z_04). The gel routines (and UpdateNormalZolOrGel, shared with the zol) were
-// advanced by the wave-4 integrator: level 1 has gels. UpdateZol is still a stub for P19.
-// X = object slot in every routine.
+// P19 — enemies/zol-gel (Z_04): zols (split into two gels when hurt) and gels. The gel routines were
+// advanced by the wave-4 integrator. X = object slot in every routine.
 import { ram, cpu } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import {
   ObjState, ObjX, ObjY, FrameCounter, ObjTimer, ObjGridOffset, ObjQSpeedFrac, ObjTurnRate, Random,
-  ObjType, ObjDir, ObjectFirstUnwalkableTile,
+  ObjType, ObjDir, ObjectFirstUnwalkableTile, RoomObjCount, ObjMetastate, ObjInvincibilityTimer,
 } from '../../core/vars.js';
+import { tableJump } from '../../core/asm.js';
+import { label } from '../../core/rom.js';
+import { DestroyMonster } from '../objects/slots.js';
+import { ShootLimited } from './shots.js';
+import { DrawObjectMirrored } from '../draw/anim.js';
 import { InitWalker, Wanderer_TargetPlayer } from './common.js';
 import { Anim_FetchObjPosForSpriteDescriptor, DrawObjectNotMirrored } from '../draw/anim.js';
 import { Anim_SetSpriteDescriptorAttributes } from '../draw/sprites.js';
@@ -15,9 +19,91 @@ import { CheckMonsterCollisions } from '../combat/collisions.js';
 import { GetCollidingTileMoving } from '../movement/tiles.js';
 import { BoundByRoom } from '../movement/bounds.js';
 import { MoveObject } from '../movement/walker.js';
-import { stubX } from '../stub.js';
 
-export const UpdateZol = stubX('UpdateZol');
+/** UpdateZol (Z_04). X = zol: run its state, collide, draw (frame image flips every 8 frames). */
+export function UpdateZol(x) {
+  // UpdateZol (Z_04)
+  UpdateZolState(x);
+  Zol_CheckCollisions(x);
+  Anim_FetchObjPosForSpriteDescriptor(x);
+  let y = 0x00;
+  if ((ram[FrameCounter] & 0x08) === 0) y++;
+  return DrawObjectMirrored(y, x);
+}
+
+/** UpdateZolState (Z_04). X = zol: UpdateZolState_JumpTable by ObjState. */
+export function UpdateZolState(x) {
+  // UpdateZolState (Z_04)
+  return tableJump(label('UpdateZolState_JumpTable').addr, ram[ObjState + x], [
+    () => UpdateZolState0_Wander(x),
+    () => UpdateZolState1_Shove(x),
+    () => UpdateZolState2_Split(x),
+  ]);
+}
+
+/** UpdateZolState0_Wander (Z_04). X = zol: UpdateNormalZolOrGel with q-speed $18. */
+export function UpdateZolState0_Wander(x) {
+  // UpdateZolState0_Wander (Z_04)
+  return UpdateNormalZolOrGel(0x18, x);
+}
+
+/** UpdateZolState1_Shove (Z_04). X = zol or vire: move straight and fast; when blocked, next state. */
+export function UpdateZolState1_Shove(x) {
+  // UpdateZolState1_Shove (Z_04)
+  Gel_MoveSplitting(x);
+  if (cpu.c) ram[ObjState + x]++;
+}
+
+/**
+ * UpdateZolState2_Split (Z_04). X = zol: destroy it and create two child gels, the first going left
+ * (zol facing vertically) or up, the second the opposite (direction >> 1).
+ */
+export function UpdateZolState2_Split(x) {
+  // UpdateZolState2_Split (Z_04)
+  ram[RoomObjCount]++;
+  DestroyMonster(x);
+  let r = CreateChildGel(x);
+  x = r.x;
+  const a = ram[ObjDir + x] >= 0x04 ? 0x02 : 0x08;
+  ram[ObjDir + r.y] = a;
+  const pushed = a; // PHA
+  r = CreateChildGel(x);
+  ram[ObjDir + r.y] = pushed >> 1; // PLA / LSR
+}
+
+/**
+ * CreateChildGel (Z_04). X = zol: "shoot" a child gel ($14) in state 0 with the zol's grid offset.
+ * When there is no empty slot, Y = 0 and the writes land on Link's slot, as in the original.
+ * @returns {{x:number, y:number}} X = CurObjIndex after a shot, Y = gel slot (or 0)
+ */
+export function CreateChildGel(x) {
+  // CreateChildGel (Z_04)
+  ram[0x00] = 0x14;
+  const r = ShootLimited(x);
+  ram[ObjState + r.y] = 0x00;
+  ram[ObjGridOffset + r.y] = ram[ObjGridOffset + r.x];
+  return { x: r.x, y: r.y };
+}
+
+/**
+ * Zol_CheckCollisions (Z_04). X = zol in state 0: collide; when hurt (not killed), go to state 1 (a big
+ * shove) if Link's facing direction is aligned with the grid for the zol's position, else state 2.
+ */
+export function Zol_CheckCollisions(x) {
+  // Zol_CheckCollisions (Z_04)
+  if (ram[ObjState + x] !== 0) return; // @Exit
+  Gel_CheckCollisions(x);
+  if (ram[ObjMetastate + x] !== 0) return;
+  if (ram[ObjInvincibilityTimer + x] === 0) return;
+  let y = 0x00;
+  if ((ram[ObjY + x] & 0x0f) === 0x0d) y = 0x03;
+  ram[0x00] = y;
+  y = 0x00;
+  if ((ram[ObjX + x] & 0x0f) === 0) y = 0x0c;
+  // AND ObjDir: the asm reads Link's direction (slot 0), not ObjDir, X.
+  if (((y | ram[0x00]) & ram[ObjDir]) === 0) ram[ObjState + x]++;
+  ram[ObjState + x]++;
+}
 
 /** InitGel (Z_04). X = gel: gels not split from a zol start in state 2. */
 export function InitGel(x) {

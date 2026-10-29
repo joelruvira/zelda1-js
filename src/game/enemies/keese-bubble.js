@@ -1,13 +1,13 @@
-// P19 — enemies/keese-bubble (Z_04). The keese routines and AnimateAndDrawCommonObject were advanced by
-// the wave-4 integrator (keeses appear in the first underworld rooms the overworld movies reach); the
-// bubble routines are still stubs for P19. X = object slot in every routine.
+// P19 — enemies/keese-bubble (Z_04): bubbles, keeses and AnimateAndDrawCommonObject. The keese routines
+// were advanced by the wave-4 integrator. X = object slot in every routine.
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
 import {
   Random, ObjDir, FlyingMaxSpeedFrac, Flyer_ObjSpeed, InvClock, ItemLiftTimer, Flyer_ObjDistTraveled,
-  Flyer_ObjFlyingState, Flyer_ObjTurns,
+  Flyer_ObjFlyingState, Flyer_ObjTurns, ObjQSpeedFrac, ObjType, FrameCounter, SwordBlockedLongTimer,
+  SwordBlocked,
 } from '../../core/vars.js';
 import { ResetFlyerState } from '../items/fairy.js';
 import {
@@ -17,12 +17,42 @@ import {
   Anim_FetchObjPosForSpriteDescriptor, Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor,
   Anim_SetObjHFlipForSpriteDescriptor, DrawObjectMirrored, DrawObjectNotMirrored,
 } from '../draw/anim.js';
-import { CheckMonsterCollisions } from '../combat/collisions.js';
+import { Anim_SetSpriteDescriptorAttributes } from '../draw/sprites.js';
+import { CheckMonsterCollisions, CheckLinkCollision } from '../combat/collisions.js';
 import { ResetShoveInfo } from '../movement/shove.js';
-import { stubX } from '../stub.js';
+import { InitWalker, UpdateCommonWanderer } from './common.js';
 
-export const InitBubble = stubX('InitBubble');
-export const UpdateBubble = stubX('UpdateBubble');
+/** InitBubble (Z_04). X = bubble: q-speed $40 (1 pixel a frame), then InitWalker. */
+export function InitBubble(x) {
+  // InitBubble (Z_04)
+  ram[ObjQSpeedFrac + x] = 0x40;
+  return InitWalker(x);
+}
+
+/**
+ * UpdateBubble (Z_04). X = bubble ($2B flashing, $2C blue, $2D red): wander (turn rate $40), draw with
+ * palette row type-$2B (or cycling for $2B), and on touching Link block the sword: $2B for $A0 frames
+ * (SwordBlockedLongTimer = $10), $2C/$2D set SwordBlocked = type-$2C (blue unblocks, red blocks).
+ */
+export function UpdateBubble(x) {
+  // UpdateBubble (Z_04)
+  UpdateCommonWanderer(0x40, x);
+  let a = ram[ObjType + x];
+  if (a !== 0x2b) a = (a - 0x2b) & 0xff; // SEC / SBC #$2B
+  else a = ram[FrameCounter] & 0x03; // @Flash
+  // @Animate
+  Anim_SetSpriteDescriptorAttributes(a);
+  AnimateAndDrawCommonObject(0x01, x);
+  CheckLinkCollision(x);
+  if (ram[0x06] === 0) return; // @Exit
+  a = ram[ObjType + x];
+  if (a !== 0x2b) {
+    // @BlockOrUnblock
+    ram[SwordBlocked] = (a - 0x2c) & 0xff;
+    return;
+  }
+  ram[SwordBlockedLongTimer] = 0x10;
+}
 
 /** InitBlueKeese (Z_04). X = keese: random one of 8 directions; max speed $C0, speed $1F. */
 export function InitBlueKeese(x) {

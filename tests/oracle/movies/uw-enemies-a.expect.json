@@ -1,0 +1,38 @@
+{
+  "comment": "Underworld monsters A (P19).",
+  "sram": "p19-items.sav",
+  "reaches": {
+    "CurLevel": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      1
+    ]
+  },
+  "monsterTypes": [
+    5,
+    6,
+    11,
+    12,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    27,
+    28,
+    40,
+    42,
+    43,
+    48
+  ],
+  "events": [
+    "zol split f13165",
+    "vire split f25654",
+    "potion f44036",
+    "pols voice shot f51399"
+  ]
+}
