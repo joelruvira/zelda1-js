@@ -5,8 +5,9 @@ Objetivo: que la imagen del port sea idéntica a la del original también cuando
 dan diff 0, pero el port ejecuta la lógica "en tiempo cero" y solo cuenta ciclos en los bucles
 temporizados (`ppu.waitSprite0Clear/Hit`, `ppu.cpuCycles(n)` en `src/game/ppu/sprite0.js`).
 
-**Estado (Pasos 0-4 hechos; imagen pixel perfect contra el oráculo en los 72 movies): ver §10.** El rastreador ya vive en
-`src/core/timing.js`; las secciones 2-8 describen la medición y el diseño que llevaron a él.
+**Estado (Pasos 0-4 hechos; imagen pixel perfect contra el oráculo jsnes en los 72 movies: ver §10. Modo
+`hardware` pixel perfect contra Mesen2 en los 72 movies y modo por defecto del navegador: ver §11).** El
+rastreador ya vive en `src/core/timing.js`; las secciones 2-8 describen la medición y el diseño que llevaron a él.
 
 ## 1. Resumen
 
@@ -401,8 +402,8 @@ tests/timing/                      classify, nmi-model, cfg-tracker, replay, pro
   través de las migas: cada `$br` nombra una línea de una rutina concreta y la E/S comprueba el registro.
   Así cuestan menos anotaciones y no hay que envolver 1 250 funciones con `try/finally`.
 * **Referencia**: el diff de CI se hace en modo `jsnes` (jsnes-compat) contra el oráculo jsnes; es el modo por
-  defecto de `src/headless.js`, de la batería y de la página. `hardware` queda como modo experimental (punto
-  impar, render por puntos; DMC con robos de 4 ciclos: falta el modelo 1-4 de hardware y un oráculo Mesen).
+  defecto de `src/headless.js` y de la batería. El modo `hardware` (§11) se valida contra Mesen2 y es el modo
+  por defecto de la página (`src/main.js`).
 
 ### Paso 1 — infraestructura
 
@@ -501,11 +502,119 @@ repetir hasta que `cycle-diff --all` (sin `--resync`) no encuentre desfases y la
 
 ### Pendiente
 
-* Modo `hardware`: DMC de 1-4 ciclos (hoy 4 como jsnes) y validación por punto con el segundo oráculo
-  (Mesen2, `tools/oracle-mesen/`); su render por puntos cuesta ~2,2 ms/frame (se podría optimizar como el
-  modo jsnes).
+* ~~Modo `hardware`: DMC de 1-4 ciclos y validación por punto con Mesen2~~: hecho (§11).
 * Modo `off` (sin rastreador): el corte del sprite 0 escribe justo tras el hit (sin retardos contados a
   mano); solo es un respaldo.
 * 6 saltos de enemigos nunca se ejecutan en los movies (código muerto o salas no visitadas: Z_04:306/311,
   2135, 3232/3234, 4160) y algunos de jefes (`Gleeok_ContractSegment*`, `Digdogger_SlowDown`, `Unused_*`):
   anotados leyendo el asm, sin verificación contra el oráculo.
+
+## 11. Modo `hardware`: pixel perfect contra Mesen2 (Fase 8)
+
+**Estado (2026-10-30)**: `node tools/oracle-mesen/vs-port.mjs <los 72 movies> --timing hardware --require-zero`
+da **0 px y RAM/SRAM idénticas en los 799 997 frames** (incluidos los `fuzz-*` y `save-and-continue`, que usa
+el mando 2). `node tools/oracle-mesen/cycle-diff.mjs <movie>` da además **0 diferencias a nivel de ciclo**
+(inicio de cada NMI, cada `RTI`, cada escritura a `$2000-$2007`/`$4000-$4017`, cada lectura de `$2002` y cada
+lectura de DMA del DMC en el mismo ciclo de CPU que Mesen) en los 12 movies comprobados: `title-start`,
+`walk-first-screens`, `items-all`, `save-and-continue`, `death-continue`, `cave-and-cellar`, `uw-level1-full`,
+`boss-gleeok4`, `fuzz-boss-gleeok4`, `fuzz-ow`, `boss-ganon` y `ending-from-ganon` (≈ 24,7 M eventos). `hardware` es el modo por defecto del navegador
+(`src/main.js`, `?timing=jsnes|off` para los otros); headless, batería y CI siguen en `jsnes` contra jsnes.
+
+La referencia es **Mesen2 2.1.1** con la configuración de `tools/oracle-mesen/lib/mesen.mjs`
+(`RandomizeCpuPpuAlignment` y `RandomizeMapperPowerOnState` apagados, consola NES-001, sin *glitches*
+opcionales). El hardware real no es único a nivel de punto (fase CPU/PPU y paleta al encender aleatorias,
+revisiones de PPU): el modo `hardware` reproduce **esa** consola de referencia.
+
+### 11.1 Antes / después (72 movies, 799 997 frames, contra Mesen2)
+
+`vs-port.mjs` sobre los 72 movies con el código de la Fase 7 (commit `ba9728c`, modo `hardware`) y con el
+actual (frames con algún píxel distinto, píxeles; `ram` = frames con RAM/SRAM distinta):
+
+| Clase | Antes: frames | Antes: px | Después |
+|---|---:|---:|---:|
+| `backdrop` (paleta de encendido, frames 1-5) | 360 | 22 118 400 | 0 |
+| `split-63` (línea del split del sprite 0) | 37 452 | 1 212 647 | 0 |
+| `split-scroll` (campo desplazado 1 línea bajo el split) | 200 | 1 771 413 | 0 |
+| `lag` (RTI en la línea 240: otra imagen) | 44 | 44 585 | 0 |
+| `late-write` (PPUMASK en la línea 52 del título) | 70 | 280 | 0 |
+| `ram` (RAM/SRAM distinta en el `RTI`) | 9 | 496 | 0 |
+| **Total** | **38 127** | **25 147 821** | **0** |
+
+Los 9 frames `ram` (el 23588 de los 5 movies de Ganon/Patra, una NMI anidada, y 4 de `fuzz-boss-gleeok4`)
+tenían distintos solo los temporales `$00-$1F`: dependen del ciclo en que empieza una NMI que interrumpe a
+otra o la sigue sin pausa, y desaparecen con la temporización exacta.
+`save-and-continue` (mando 2) se valida desde esta fase: el runner de Mesen no admitía el jugador 2 (la
+columna "antes" se midió ya con el runner corregido, `docs/ORACLE.md`).
+
+### 11.2 Causas encontradas y modelo
+
+Diagnóstico con `tools/oracle-mesen/cycle-diff.mjs` (traza Lua de Mesen, `lua/cycles.lua`: ciclo de CPU y
+posición del raster de cada evento) frente al log del rastreador (`timing.log`), más el código de Mesen2
+2.1.1 (`NesCpu.cpp`, `NesPpu.cpp`). Por orden de aparición:
+
+1. **Fase CPU/PPU al encender** (clase `late-write`, `split-63`, `split-scroll`: todo desplazado). El modo
+   hardware usaba la alineación de jsnes (PPU en 241/1 en el punto 16). Mesen: 8 ciclos de reset (su
+   `CycleCount` = nuestro ciclo + 1, el primer `IsrReset` sigue en nuestro ciclo 7), la PPU empieza en la
+   línea 0 punto 0 y el acceso del ciclo `n` de Mesen ve los puntos `k <= 3n + 3`
+   (`masterClock`: `StartCpuCycle` +5/+7, `_ppuOffset` 1, divisor 4). En el port: punto absoluto
+   `p = k - 7` (`Ppu.powerOnAtLine0(-7)`). Sin esto la primera NMI empezaba 2 394 ciclos antes en Mesen.
+2. **Bandera de vblank**: Mesen la pone al emular 241/1 (el port, al terminar 241/0: un punto antes);
+   sprite 0 y overflow se borran en 261/0 y vblank en 261/1; una lectura de `$2002` justo tras 241/0 suprime
+   la bandera de ese frame (`preventVbl`).
+3. **Latencia de la NMI** (`Tracker.runUntilHw`): el flanco se ve al final del ciclo `c` en que la PPU pone la
+   bandera (241/1 `<= 3c`) y la NMI sigue a la instrucción cuyo último ciclo es `c + 1` o posterior (una
+   instrucción que acaba justo en `c` va seguida de una más). Habilitar la NMI con la bandera puesta (o
+   cuando la PPU llega a 241/1 en ese mismo ciclo) la da tras la instrucción siguiente.
+4. **OAM DMA**: halt + (alineación) + 256 pares get/put con los ciclos *get* pares en nuestra numeración: 513
+   ciclos si la escritura a `$4014` cae en un ciclo par, 514 si impar (al revés que la regla de jsnes por la
+   numeración distinta).
+5. **DMA del DMC** (`HardwareApuTiming` + `Tracker.dmaRun`, copia del bucle `ProcessPendingDma` de Mesen): el
+   temporizador corre desde el encendido (primer reloj en el ciclo 426, recarga con el período vigente); al
+   vaciarse el buffer se pide un DMA en ese ciclo y la CPU se detiene **antes del siguiente ciclo de lectura**
+   (nunca en uno de escritura: máscara de escrituras por instrucción, `writeMask`), aunque sea a mitad de la
+   instrucción: halt + dummy + alineación a ciclo par + lectura = 3 o 4 ciclos; combinado con el OAM DMA como
+   en Mesen. `$4015` arranca la muestra con un retardo de 2 ciclos (3 si la escritura cae en ciclo par).
+   jsnes roba siempre 4 ciclos tras la instrucción: era la deriva de fase que movía el split del sprite 0 de
+   un frame a otro (`split-63`) y la línea del `RTI` (`lag`).
+6. **Lecturas repetidas por el DMA**: los ciclos halt/dummy repiten la lectura pendiente de la CPU. Si es
+   `LDA $4016,X` el mando pierde un bit (salvo que el DMC lea la misma dirección baja) y
+   `ReadOneController` repite la lectura: cambia el número de vueltas (y la temporización), no la RAM final;
+   `$2002` borra vblank y el latch `w`; `$2007` incrementa `v` (dos lecturas a menos de 6 puntos: la segunda se
+   ignora). El bus (`bus.read`) aplica el bit perdido (`timing.inputGlitch`).
+7. **PPU por puntos copia de la de Mesen** (`Ppu.stepHw`): lecturas de fondo en los puntos 8k+1 (nombre, con
+   `v` y la tabla de `$2000` de ese momento), +3 (atributo), +5/+7 (patrón); registros de 16 bits y la pareja
+   paleta anterior/actual; la bandera de render toma PPUMASK un punto tarde y su copia (incrementos de `v`)
+   dos; el segundo `$2006` copia `t` en `v` 3 puntos después y `$2007` incrementa `v` un punto después (era la
+   clase `split-scroll`: la escritura del split cae junto al incremento de Y del punto 256); escala de grises
+   con 2 píxeles de retraso; punto impar decidido en 261/339 con la bandera retrasada; sprites evaluados en
+   el punto 256 y cargados en el 257 de la línea anterior; hit del sprite 0 con las condiciones de Mesen.
+8. **Imagen de cada frame** (clase `lag`): Mesen toma la primera imagen completada (240/0) tras el `RTI`. El
+   port dibuja por adelantado hasta ese punto si ninguna NMI puede empezar antes (`finishPicture`); si el
+   `RTI` cae después de 240/0 o hay una NMI pendiente, la imagen se completa durante el frame siguiente:
+   `ppu.onPicture(punto)` y `timing.pictureDue` permiten emparejarla (vs-port).
+9. **Paleta de encendido** (clase `backdrop`, frames 1-5): Mesen 2.1.1 con RAM de encendido fija usa la paleta
+   del test de blargg (`$3F00=$09`…); en hardware real es indeterminada. El modo `hardware` la copia.
+
+### 11.3 Herramientas
+
+```sh
+node tools/oracle-mesen/vs-port.mjs <movies...> --timing hardware --require-zero --jobs 6   # px y RAM, todos los frames
+node tools/oracle-mesen/cycle-diff.mjs <movie> [--from F] [--frames N] [--max-diffs K]       # primer desfase de ciclo
+MESEN=1 node --test tests/oracle-mesen/        # incluye port hardware vs Mesen: 0 px (MESEN_FULL=1: + 2 movies largos)
+node --test tests/core/page-smoke.test.mjs     # la página (src/main.js) arranca en modo hardware y dibuja el título
+```
+
+### 11.4 Coste
+
+Máquina en reposo (Apple M, Node 26), un modo por proceso (mezclar modos en un proceso desoptimiza el JIT):
+
+| Medida | `jsnes` | `hardware` |
+|---|---:|---:|
+| `node tools/timing/bench.mjs uw-level1-full --frames 8000 --modes <modo>` | 0,63 ms/frame | 1,34 ms/frame |
+| Bucle del navegador (`runVideoFrame`, 20 000 frames de vídeo de `ow-tour`, `boss-ganon`, `uw-enemies-a`) | media 0,56 ms | media 1,22-1,34 ms, p99 1,56-1,87 ms |
+| Máximo de un frame de vídeo | 9,8 ms (el primero) | 12-19 ms el primero (NMI de encendido + JIT); después ≤ 6,1 ms |
+
+Frente a 16,64 ms por frame a 60,0988 Hz. La diferencia con `jsnes` (~0,7 ms por frame) es la PPU por puntos
+(`stepHw`: un paso por punto en las 240 líneas visibles y la de pre-render con el render activo); con el
+render apagado (cargas) las líneas visibles se rellenan de golpe (`blankRunHw`) y se saltan los puntos sin
+efecto.

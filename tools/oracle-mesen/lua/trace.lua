@@ -87,10 +87,11 @@ local function padTable(mask)
 end
 
 local cur1, cur2 = 0, 0
--- Mesen2 2.1.1: emu.setInput(t, 1) also overwrites port 0 (seen empirically), so the second pad is
--- never touched; run.mjs rejects movies with player-2 input (Zelda's movies have none).
+-- Mesen2 2.1.1's LuaApi::SetInput reads its integer arguments from the end: emu.setInput(t, 1) sets
+-- port 0 (subport 1 of nothing), emu.setInput(t, 0, 1) sets port 1 (checked with emu.getInput).
 local function applyPad()
   emu.setInput(padTable(cur1), 0)
+  emu.setInput(padTable(cur2), 0, 1)
 end
 
 local videoFrames = 0

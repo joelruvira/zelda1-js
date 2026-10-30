@@ -170,7 +170,6 @@ export async function* runMesen({ rom, romPath, movie, sram = null, powerOnFill 
     throw new MesenMissingError(`Mesen2 is not ready (${problems.join('; ')}). Run: node tools/oracle-mesen/setup.mjs`);
   }
   if (powerOnFill === 'jsnes') throw new Error('Mesen runner: --power-on jsnes is not supported (use a hex byte)');
-  if (movie.p2.some((v) => v)) throw new Error('Mesen runner: player-2 input is not supported (emu.setInput port 1 aliases port 0 in Mesen2 2.1.1)');
   const { nmi, rti } = findNmiAndRti(rom);
   const frames = movie.length;
   let fbsel = 'none';

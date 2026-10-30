@@ -371,15 +371,17 @@ para `io.open`. El log de stdout incluye avisos `[CPU] Uninitialized memory read
   desde el vector; el mismo que ve el gancho de jsnes). Se dispara al buscar el opcode, antes de ejecutarlo.
 * **Entrada**: al entrar la NMI n se pone `movie[n-1]` en el mando 1 y se vuelve a aplicar tras cada sondeo
   de Mesen (línea 241) hasta la NMI siguiente; equivale a jsnes (estado mantenido de NMI a NMI).
-  Limitación: `emu.setInput(t, 1)` de Mesen 2.1.1 sobrescribe también el puerto 0, así que **no se admite
-  entrada del jugador 2** (ningún movie la usa). Los movies `timing video` (.fm2) cambian la entrada en cada
-  sondeo (línea 241), no en el `frame()` de jsnes: aproximado.
+  Jugador 2: `LuaApi::SetInput` de Mesen 2.1.1 lee sus argumentos enteros desde el final, así que
+  `emu.setInput(t, 1)` escribe el puerto 0; el puerto 1 se escribe con `emu.setInput(t, 0, 1)` (comprobado con
+  `emu.getInput`). Con eso `save-and-continue` (Arriba+A en el mando 2) se valida como los demás. Los movies
+  `timing video` (.fm2) cambian la entrada en cada sondeo (línea 241), no en el `frame()` de jsnes: aproximado.
 * **Imagen del frame N**: el primer frame de vídeo completado (evento `endFrame`, línea 240) tras la
   instantánea; si llega otra instantánea antes, el frame no tiene imagen (como en jsnes).
 * **SRAM inicial**: el script escribe los 8 KB (`.sav` del movie o ceros) en la carga, antes de la primera
   instrucción; el `Saves/zelda.sav` que Mesen carga y guarda por su cuenta se ignora.
-* **Encendido**: Mesen arranca la RAM de paleta con el patrón del hardware (`$3F00=$09`…), jsnes y el port con
-  ceros: hasta que el juego escribe la paleta (frames 0-5) el fondo uniforme difiere (clase `backdrop`).
+* **Encendido**: Mesen arranca la RAM de paleta con valores fijos (`$3F00=$09`…, los del test de paleta de
+  blargg; en el hardware real es indeterminada), jsnes con ceros: hasta que el juego escribe la paleta (frames
+  0-5) el fondo uniforme difiere (clase `backdrop`). El port en modo `hardware` usa los de Mesen; en `jsnes`, ceros.
 * **Evidencia extra por frame**: NMIs entre dos RTI (anidadas), frame de vídeo y línea de la NMI y del RTI, y
   las escrituras a `$2000/$2001/$2005/$2006` hechas en una línea visible con la posición (línea:punto) de
   Mesen. Protocolo del flujo: cabecera de `lua/trace.lua`.
@@ -392,6 +394,7 @@ node tools/oracle-mesen/run.mjs tests/oracle/movies/title-start.zmv --png every:
 node tools/oracle/diff.mjs out/oracle/title-start/trace.ztrace out/oracle-mesen/title-start/trace.ztrace
 node tools/oracle-mesen/vs-jsnes.mjs [movies...] [--png-dir d]      # validación Mesen vs jsnes (lockstep)
 node tools/oracle-mesen/vs-port.mjs [movies...] [--timing hardware|jsnes|off] [--png-dir d] [--require-zero]
+node tools/oracle-mesen/cycle-diff.mjs <movie> [--from F] [--frames N]   # port hardware vs Mesen, evento a evento (ciclo de CPU)
 MESEN=1 node --test tests/oracle-mesen/                             # tests (MESEN_FULL=1: + movies largos)
 ```
 
@@ -403,7 +406,10 @@ sin `--sram` usa la `.sav` del `.expect.json` del movie, como la batería). `vs-
 (`lib/classify.mjs`): `ram`, `backdrop`, `nested-nmi`, `lag`, `split-63`, `split-scroll`, `late-write`,
 `greyscale`, `other`. `vs-port` compara las filas 0-239 (los dos dibujan la fila 0) y por defecto pone el
 tracker del port en modo `hardware`; código 1 si difiere la RAM/SRAM (o, con `--require-zero`, cualquier
-píxel). Velocidad: ~250-300 frames/s (Mesen + volcado Lua de 10 KB por frame), ~110 s para un movie de 12 000.
+píxel). En modo `hardware` la imagen del port para el frame N es, como en Mesen, la primera completada
+(punto 240/0, `ppu.onPicture(punto)`) a partir de `timing.pictureDue` (el punto que sigue al `RTI`); puede
+completarse mientras corre el frame N+1 (RTI tras 240/0 o NMI pendiente), así que vs-port la espera. Un frame
+con imagen en Mesen y sin imagen en el port cuenta como 61 440 px distintos (`noPortPicture`). Velocidad: ~250-300 frames/s (Mesen + volcado Lua de 10 KB por frame), ~110 s para un movie de 12 000.
 
 ### Validación Mesen2 vs jsnes (2026-10-30)
 
@@ -429,3 +435,13 @@ píxel). Velocidad: ~250-300 frames/s (Mesen + volcado Lua de 10 KB por frame), 
   `boss-gleeok4` y jsnes 87 (62/59 en `uw-level1-full`): efecto de la deriva CPU/PPU de jsnes (frame impar,
   DMC de 4 ciclos).
 * `backdrop`: frames 0-5, paleta de encendido (ver arriba). `greyscale` y `other`: 0.
+
+### Validación del port (modo `hardware`) contra Mesen2 (2026-10-30, Fase 8)
+
+`node tools/oracle-mesen/vs-port.mjs <los 72 movies> --timing hardware --require-zero --jobs 6`: **72 movies,
+799 997 frames, RAM/SRAM distinta en 0 frames, 0 px distintos** (todas las imágenes de Mesen comparadas; los
+frames sin imagen propia en Mesen, NMIs anidadas o RTI tras 240/0 seguidos de otro RTI, no se comparan, igual
+que en jsnes). Antes de la Fase 8 el mismo comando daba 38 127 frames y 25 147 821 px distintos (clases y
+causas en `docs/TIMING.md` §11). `node tools/oracle-mesen/cycle-diff.mjs <movie>` compara además cada evento
+de E/S en su ciclo (0 diferencias). `MESEN=1 node --test tests/oracle-mesen/` exige 0 px en `power-on-600`,
+`title-start` y `walk-first-screens` (con `MESEN_FULL=1`, también `uw-level1-full` y `boss-gleeok4`).

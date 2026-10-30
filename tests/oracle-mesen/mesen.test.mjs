@@ -1,7 +1,8 @@
 // Mesen2 as second oracle (tools/oracle-mesen, docs/ORACLE.md "Segundo oráculo: Mesen2").
 // Slow and needs a local Mesen2 (reference/, not in the repo): only with MESEN=1.
 //   MESEN=1 node --test tests/oracle-mesen/
-//   MESEN=1 MESEN_FULL=1 node --test tests/oracle-mesen/   (+ uw-level1-full and boss-gleeok4, ~2 min)
+//   MESEN=1 MESEN_FULL=1 node --test tests/oracle-mesen/   (+ uw-level1-full and boss-gleeok4, ~5 min)
+// Includes the port in 'hardware' timing mode against Mesen: 0 px and identical RAM/SRAM required.
 // Skipped without MESEN=1, without Mesen2 set up (node tools/oracle-mesen/setup.mjs), without
 // roms/zelda.nes or without jsnes.
 import { test } from 'node:test';
@@ -13,6 +14,7 @@ import { hasJsnes } from '../../tools/oracle/lib/jsnes-loader.mjs';
 import { idleMovie, loadMovie } from '../../tools/oracle/lib/movie.mjs';
 import { setupProblems, findNmiAndRti, runMesen, mesenSettings } from '../../tools/oracle-mesen/lib/mesen.mjs';
 import { compareMesenJsnes } from '../../tools/oracle-mesen/vs-jsnes.mjs';
+import { comparePortMesen } from '../../tools/oracle-mesen/vs-port.mjs';
 
 const MOVIES = join(REPO_ROOT, 'tests/oracle/movies');
 const ready = process.env.MESEN ? setupProblems() : [];
@@ -69,6 +71,21 @@ for (const name of SET) {
       // frame 121: PPUMASK write on visible line 52 (docs/TIMING.md §4), only that frame
       assert.deepEqual(rep.examples['late-write'].map((e) => e.frame), [121]);
     }
+  });
+}
+
+// The port in 'hardware' timing mode (the browser's default) must be pixel perfect against Mesen2:
+// every frame, every pixel (rows 0-239), RAM and SRAM (docs/TIMING.md §11).
+for (const name of SET) {
+  test(`port (timing hardware) vs Mesen: ${name}: 0 px, RAM/SRAM identical`, { skip, timeout: 1800e3 }, async () => {
+    const rep = await comparePortMesen(join(MOVIES, `${name}.zmv`), { timing: 'hardware' });
+    assert.equal(rep.portError, null);
+    assert.equal(rep.compared, loadMovie(join(MOVIES, `${name}.zmv`)).length + 1);
+    assert.equal(rep.ramFrames, 0, JSON.stringify(rep.examples.ram.slice(0, 3)));
+    assert.equal(rep.noPortPicture ?? 0, 0);
+    const bad = Object.entries(rep.examples).filter(([, v]) => v.length).map(([k, v]) => `${k}: ${JSON.stringify(v.slice(0, 2))}`);
+    assert.equal(rep.px, 0, bad.join('\n'));
+    assert.ok(rep.fbCompared >= rep.frames - 10, `pictures compared ${rep.fbCompared}/${rep.frames}`);
   });
 }
 

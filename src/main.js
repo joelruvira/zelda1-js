@@ -40,8 +40,9 @@ function present() {
   ctx.putImageData(image, 0, 0);
 }
 
-// Cycle tracker (docs/TIMING.md): ?timing=jsnes (default: the CI oracle's rules), hardware or off.
-const TIMING_MODE = new URLSearchParams(location.search).get('timing') ?? 'jsnes';
+// Cycle tracker (docs/TIMING.md §11): ?timing=hardware (default: the console, pixel perfect against
+// Mesen2), jsnes (the CI oracle's rules) or off.
+const TIMING_MODE = new URLSearchParams(location.search).get('timing') ?? 'hardware';
 
 // ---------------------------------------------------------------- startup
 async function start(buffer, { remember = true } = {}) {

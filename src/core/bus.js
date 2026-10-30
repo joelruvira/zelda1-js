@@ -41,8 +41,12 @@ export function read(addr) {
     }
   }
   if (addr === 0x4015) return bus.apuRead ? bus.apuRead() : 0;
-  if (addr === 0x4016) return bus.input ? bus.input.read(0) : 0x40;
-  if (addr === 0x4017) return bus.input ? bus.input.read(1) : 0x40;
+  if (addr === 0x4016 || addr === 0x4017) {
+    if (!bus.input) return 0x40;
+    // hardware timing: a DMC fetch on this read cycle clocked the controller once more (bit deletion)
+    if (timing.inputGlitch) { timing.inputGlitch = 0; bus.input.read(addr - 0x4016); }
+    return bus.input.read(addr - 0x4016);
+  }
   if (addr < 0x6000) return 0;
   if (addr < 0x8000) return sram[addr - 0x6000];
   return bus.rom.prgByte(bus.mapper.prgBankAt(addr), addr);

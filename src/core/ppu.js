@@ -36,6 +36,12 @@ export const NES_PALETTE = [
   0xf8d878, 0xd8f878, 0xb8f8b8, 0xb8f8d8, 0x00fcfc, 0xf8d8f8, 0x000000, 0x000000,
 ];
 
+/** Palette RAM at power-on in hardware mode (Mesen2 2.1.1 with RAM power-on state "all zeros"). */
+const POWER_ON_PALETTE = [
+  0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0d, 0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2c,
+  0x09, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 0x08, 0x3a, 0x00, 0x02, 0x00, 0x20, 0x2c, 0x08,
+];
+
 // Pixel ABGR (little-endian RGBA bytes) for a Uint32Array view of an ImageData buffer.
 const toAbgr = (rgb) => (0xff000000 | ((rgb & 0xff) << 16) | (rgb & 0xff00) | ((rgb >> 16) & 0xff)) >>> 0;
 
@@ -59,6 +65,10 @@ export class Ppu {
     this.onFrame = null;
     /** Reproduce jsnes 2.1.0 (the oracle) instead of the hardware where they differ (see header). */
     this.jsnesCompat = false;
+    /** Hardware mode (cycle tracker 'hardware'): dot-exact copy of Mesen2 2.1.1's PPU (see stepHw). */
+    this.hardware = false;
+    /** Hardware mode: called with the absolute dot of 240/0 when a picture is complete (Mesen's endFrame). */
+    this.onPicture = null;
     this.reset();
   }
 
@@ -77,6 +87,16 @@ export class Ppu {
     this.frameStart = 0; // absolute dot of the current frame's 241/1 (continuous mode)
     this.pendingMask = -1; // jsnesCompat: PPUMASK write waiting for the end of the line
     this.skippedThisFrame = false;
+    // hardware mode (Mesen2 NesPpu state)
+    this.renEn = false; this.prevRenEn = false; // rendering enabled flag (1 dot late) and its copy (2 dots)
+    this.needUpdate = false; // Mesen _needStateUpdate
+    this.vDelay = 0; this.vNext = 0; // $2006: v takes t 3 dots after the 2nd write
+    this.needInc = false; // $2006/$2007 access: v increments 1 dot later
+    this.preventVbl = false; // $2002 read on 241/0
+    this.ignoreRead = 0; // $2007 reads closer than 6 dots: the second is ignored
+    this.loShift = 0; this.hiShift = 0; this.prevPal = 0; this.curPal = 0;
+    this.tileAddr = 0; this.tilePal = 0; this.tileLo = 0; this.tileHi = 0;
+    this.sprList = []; this.spr0Visible = false; this.sprTiles = []; this.hasSprite = new Uint8Array(258);
   }
 
   setRgbPalette(rgbList) { rgbList.forEach((c, i) => { this.rgba[i] = toAbgr(c); }); }
@@ -140,6 +160,7 @@ export class Ppu {
       return;
     }
     this.pendingMask = -1;
+    if (this.hardware) { this.writeMaskHw(value & 0xff); return; }
     this.mask = value & 0xff;
   }
 
@@ -149,6 +170,8 @@ export class Ppu {
     const s = this.status;
     this.status &= 0x7f;
     this.w = 0;
+    // hardware: a read one dot before the flag rises (241/0 just emulated) suppresses it for this frame
+    if (this.hardware && this.line === VBLANK_LINE && this.dot === 1) this.preventVbl = true;
     return s;
   }
 
@@ -177,7 +200,8 @@ export class Ppu {
       this.t = (this.t & 0xff) | ((value & 0x3f) << 8);
     } else {
       this.t = (this.t & 0x7f00) | value;
-      this.v = this.t;
+      if (this.hardware) { this.vNext = this.t; this.vDelay = 3; this.needUpdate = true; } // v 3 dots later
+      else this.v = this.t;
     }
     this.w ^= 1;
   }
@@ -186,12 +210,19 @@ export class Ppu {
   writeData(value) {
     this.sync();
     this.poke(this.v, value);
+    if (this.hardware) { this.needInc = true; this.needUpdate = true; return; } // incremented 1 dot later
     this.incrementV();
   }
 
   /** $2007 PPUDATA read (buffered except for palette). */
   readData() {
     this.sync();
+    // hardware: a second read under 6 dots after the previous one is ignored (Mesen _ignoreVramRead)
+    if (this.hardware) {
+      if (this.ignoreRead > 0) return 0;
+      this.ignoreRead = 6;
+      this.needUpdate = true;
+    }
     const addr = this.v & 0x3fff;
     let result;
     if (addr >= 0x3f00) {
@@ -201,6 +232,7 @@ export class Ppu {
       result = this.readBuffer;
       this.readBuffer = this.peek(addr);
     }
+    if (this.hardware) { this.needInc = true; this.needUpdate = true; return result; }
     this.incrementV();
     return result;
   }
@@ -255,6 +287,26 @@ export class Ppu {
     this.frameDone = false;
   }
 
+  /**
+   * Hardware power-on (Mesen2 2.1.1 alignment, docs/TIMING.md §11): the first dot emulated is scanline 0
+   * dot 0 at absolute dot `dot`; the frame start (241/1) before it is virtual. The pre-render line of the
+   * first complete frame is an even one (no skipped dot), like Mesen's frame counter (1 at power-on).
+   */
+  powerOnAtLine0(dot) {
+    this.continuous = true;
+    // power-on palette RAM: indeterminate on real hardware; Mesen2 (non-random RAM setting) uses the
+    // values of blargg's palette test, shown as the backdrop until the game writes the palette
+    this.palette.set(POWER_ON_PALETTE);
+    const toLine0 = (LINES - VBLANK_LINE) * DOTS - 1; // 241/1 -> 0/0: 7160 dots
+    this.frameStart = dot - toLine0;
+    this.pos = toLine0; this.clock = toLine0;
+    this.line = 0; this.dot = 0;
+    this.status = 0;
+    this.frameDone = false;
+    this.oddFrame = true; // toggled at the first 241/1
+    this.skippedThisFrame = false;
+  }
+
   /** Render up to absolute dot `dot` (accesses at a dot see every earlier dot emulated). */
   syncTo(dot) {
     const c = dot - this.frameStart;
@@ -272,7 +324,8 @@ export class Ppu {
   /** True when this frame drops the last dot of the pre-render line (odd frame, rendering on; hardware only). */
   skipsDot() {
     if (this.jsnesCompat || !this.oddFrame) return false;
-    // decided at dot 339 of the pre-render line (frame order: 241..261, then 0..240)
+    // decided at dot 339 of the pre-render line (frame order: 241..261, then 0..240); before that, the
+    // prediction assumes no PPUMASK write (hardware: the flag that decides it is PPUMASK 1 dot late)
     if ((this.line === PRERENDER && this.dot > 339) || this.line < VBLANK_LINE) return this.skippedThisFrame;
     return this.renderingOn;
   }
@@ -286,9 +339,17 @@ export class Ppu {
     this.frameCount++;
     this.oddFrame = !this.oddFrame;
     this.skippedThisFrame = false;
-    this.status |= 0x80;
+    if (!this.hardware) this.status |= 0x80; // hardware: set while emulating 241/1 (stepHw)
     this.onFrame?.(this);
   }
+
+  /** Hardware: absolute dot of 241/1 when it is the next dot to emulate, else -1. */
+  vblankDotNext() {
+    return this.line === VBLANK_LINE && this.dot === 1 ? this.absDot : -1;
+  }
+
+  /** Hardware: absolute dot of this frame's 240/0 (picture complete; frame order 241/1 .. 261 .. 0 .. 240). */
+  pictureDot() { return this.nextFrameDot() - 342; }
 
   /** Called at NMI time: starts a frame at 241/1 with the vblank flag set. */
   beginFrame() {
@@ -318,7 +379,10 @@ export class Ppu {
         const k = this.idleDots();
         if (k > 0) this.skipDots(k < this.clock - this.pos ? k : this.clock - this.pos);
         else if (js) this.stepJsnes();
-        else this.step();
+        else if (this.hardware) {
+          if (this.line < 240 && this.dot >= 1 && this.dot <= 256 && this.blankHw()) this.blankRunHw();
+          else this.stepHw();
+        } else this.step();
       }
       if (this.frameDone) this.nextFrame(); // landed on 241/1: the vblank flag is already visible
       // landed on 261/1: jsnes clears the flags on arrival there (advanceDots' post-loop check)
@@ -335,6 +399,22 @@ export class Ppu {
   /** Dots from the render position on which nothing can happen (skipped in one go by sync). */
   idleDots() {
     const line = this.line, dot = this.dot;
+    if (this.hardware) {
+      if (this.needUpdate) return 0;
+      if (line < 240 || line === PRERENDER) {
+        // rendering off (flag, its delayed copy and PPUMASK): nothing happens on the visible lines' dots
+        // 0 and 258-340 (dot 257 clears the sprites; 258 may finish the greyscale) nor on the pre-render line
+        // after its dot 1 (the visible dots 1-256 are drawn by blankRunHw)
+        if (!this.blankHw()) return 0;
+        if (line === PRERENDER) return dot >= 2 ? DOTS - dot : 0;
+        if (dot === 0) return 1;
+        if (dot >= 257) return dot === 257 || ((this.mask & 1) && dot === 258) ? 0 : DOTS - dot;
+        return 0;
+      }
+      // 240/0 (picture), 241/0 (frame end) and 241/1 (vblank flag) are stepped
+      if (dot <= 1 && (line === 240 || line === VBLANK_LINE)) return 0;
+      return DOTS - dot;
+    }
     if (line >= 240 && line <= 260) {
       // post-render and vblank lines: nothing (a PPUMASK pending for line 240 applies at its dot 0)
       if (dot === 0 && (line === 240 || line === VBLANK_LINE)) return 0; // pending PPUMASK / 241/0 -> frame end
@@ -491,6 +571,220 @@ export class Ppu {
       this.line = (this.line + 1) % LINES;
     } else if (this.dot === 1 && this.line === VBLANK_LINE) this.frameDone = true; // next 241/1
 
+  }
+
+  // ---------------------------------------------------------------- hardware rendering (Mesen2 2.1.1)
+  // A dot-exact copy of Mesen2's NesPpu::Exec for what Zelda can see (docs/TIMING.md §11): background
+  // fetches at dots 8k+1 (name table, with v), +3 (attribute), +5/+7 (pattern), 16-bit shifters and the
+  // previous/current tile palette pair; the rendering flag takes PPUMASK one dot late and the copy used
+  // by the v increments two dots late; $2006 updates v 3 dots after the write, $2007 increments v one dot
+  // after the access; the vblank flag rises while emulating 241/1, sprite 0 / overflow clear on 261/0;
+  // greyscale applies to the pixels from 2 dots before the write. Sprites: evaluation result and pattern
+  // fetch for the next line are taken at dots 256/257 (Zelda never changes OAM or the sprite pattern
+  // table during the picture).
+
+  writeMaskHw(value) {
+    this.mask = value;
+    if (this.renEn !== ((value & 0x18) !== 0)) this.needUpdate = true;
+  }
+
+  greyPixel(i) {
+    const color = this.indexBuffer[i] & 0x30;
+    this.indexBuffer[i] = color;
+    this.frame32[i] = this.rgba[color];
+  }
+
+  updateStateHw() {
+    this.needUpdate = false;
+    if (this.prevRenEn !== this.renEn) this.prevRenEn = this.renEn;
+    const want = (this.mask & 0x18) !== 0;
+    if (this.renEn !== want) { this.renEn = want; this.needUpdate = true; }
+    if (this.vDelay > 0) {
+      if (--this.vDelay === 0) { this.v = this.vNext; this.t = this.v; } else this.needUpdate = true;
+    }
+    if (this.ignoreRead > 0 && --this.ignoreRead > 0) this.needUpdate = true;
+    if (this.needInc) {
+      this.needInc = false;
+      if ((this.line >= 240 && this.line !== PRERENDER) || !this.renEn) this.v = (this.v + ((this.ctrl & 4) ? 32 : 1)) & 0x7fff;
+      else { this.incX(); this.incY(); }
+    }
+  }
+
+  /** Hardware: rendering fully off (no fetch, no v increment, no sprite) and no delayed update pending. */
+  blankHw() { return !this.renEn && !this.prevRenEn && !this.needUpdate && (this.mask & 0x18) === 0; }
+
+  /** Hardware, rendering off: visible dots 1-256 up to the clock (backdrop, or the palette entry at v). */
+  blankRunHw() {
+    let n = 257 - this.dot;
+    if (n > this.clock - this.pos) n = this.clock - this.pos;
+    const v = this.v;
+    const color = (v & 0x3f00) === 0x3f00 ? this.palette[Ppu.paletteIndex(v)] : this.palette[0];
+    const grey = this.mask & 1;
+    const row = this.line * WIDTH;
+    const rgb = this.rgba[color & 0x3f];
+    for (let i = 0; i < n; i++, this.dot++) {
+      const x = this.dot - 1;
+      this.indexBuffer[row + x] = color;
+      this.frame32[row + x] = rgb;
+      if (grey && this.dot >= 3) this.greyPixel(row + x - 2);
+    }
+    this.pos += n;
+    // the shifters still shift on visible lines (Mesen shifts after every pixel)
+    this.loShift = n >= 16 ? 0 : (this.loShift << n) & 0xffff;
+    this.hiShift = n >= 16 ? 0 : (this.hiShift << n) & 0xffff;
+  }
+
+  /** One dot (the one at line/dot), as Mesen's Exec: process it, then the delayed state updates. */
+  stepHw() {
+    const line = this.line;
+    const dot = this.dot;
+    if (dot === 0) {
+      if (line === PRERENDER) { this.status &= ~0x60; this.sprList = []; }
+      else if (line === 240) {
+        this.onPicture?.(this.absDot); // picture complete (Mesen SendFrame)
+      }
+    } else if (line < 240 || line === PRERENDER) this.scanlineHw(line, dot);
+    else if (dot === 1 && line === VBLANK_LINE) {
+      if (!this.preventVbl) this.status |= 0x80;
+      this.preventVbl = false;
+    }
+    if (this.needUpdate) this.updateStateHw();
+    this.pos++;
+    this.dot++;
+    if (this.dot >= DOTS) {
+      this.dot = 0;
+      this.line = (this.line + 1) % LINES;
+    } else if (this.dot === 1 && this.line === VBLANK_LINE) this.frameDone = true;
+  }
+
+  loadTileHw(dot) {
+    switch (dot & 7) {
+      case 1: {
+        this.prevPal = this.curPal;
+        this.curPal = this.tilePal;
+        this.loShift |= this.tileLo;
+        this.hiShift |= this.tileHi;
+        const v = this.v;
+        const tile = this.vram[this.ntIndex(0x2000 | (v & 0xfff))];
+        this.tileAddr = (tile << 4) | (v >> 12) | ((this.ctrl & 0x10) << 8);
+        break;
+      }
+      case 3: {
+        const v = this.v;
+        const shift = ((v >> 4) & 4) | (v & 2);
+        this.tilePal = ((this.vram[this.ntIndex(0x23c0 | (v & 0xc00) | ((v >> 4) & 0x38) | ((v >> 2) & 7))] >> shift) & 3) << 2;
+        break;
+      }
+      case 5: this.tileLo = this.chr[this.chrOffset(this.tileAddr & 0x1fff)]; break;
+      case 7: this.tileHi = this.chr[this.chrOffset((this.tileAddr + 8) & 0x1fff)]; break;
+    }
+  }
+
+  scanlineHw(line, dot) {
+    const visible = line < 240;
+    if (dot <= 256) {
+      if (this.renEn) this.loadTileHw(dot);
+      if (this.prevRenEn && (dot & 7) === 0) {
+        this.incX();
+        if (dot === 256) this.incY();
+      }
+      if (visible) {
+        this.pixelHw(line, dot);
+        this.loShift = (this.loShift << 1) & 0xffff;
+        this.hiShift = (this.hiShift << 1) & 0xffff;
+        if (dot === 256 && this.renEn) this.evaluateSpritesHw(line);
+        // greyscale: Mesen masks the pixels lazily up to 3 dots back, so pixel x takes the PPUMASK
+        // greyscale bit in effect while dot x+3 is emulated
+        if (this.mask & 1 && dot >= 3) this.greyPixel(line * WIDTH + dot - 3);
+      } else if (dot === 1) this.status &= 0x7f; // pre-render: vblank flag clear
+    } else if (dot <= 320) {
+      if (dot === 257) {
+        this.hasSprite.fill(0);
+        if (this.prevRenEn) this.v = (this.v & ~0x41f) | (this.t & 0x41f);
+        if (this.renEn) this.loadSpritesHw(line);
+      }
+      if (visible && dot <= 258 && this.mask & 1) this.greyPixel(line * WIDTH + dot - 3); // pixels 254, 255
+      if (this.renEn && line === PRERENDER && dot >= 280 && dot <= 304) this.v = (this.v & ~0x7be0) | (this.t & 0x7be0);
+    } else if (dot <= 336) {
+      if (this.renEn) this.loadTileHw(dot);
+      if (this.prevRenEn && (dot === 328 || dot === 336)) {
+        this.loShift = (this.loShift << 8) & 0xffff;
+        this.hiShift = (this.hiShift << 8) & 0xffff;
+        this.incX();
+      }
+    } else if (dot === 339 && this.renEn && line === PRERENDER && this.oddFrame) {
+      this.dot = 340; // skipped dot: the next one is 0/0
+      this.skippedThisFrame = true;
+    }
+  }
+
+  /** Secondary OAM for the next line (Mesen evaluates on dots 65-256 of `line`). */
+  evaluateSpritesHw(line) {
+    const h = (this.ctrl & 0x20) ? 16 : 8;
+    const list = [];
+    this.spr0Visible = false;
+    for (let i = 0; i < 64; i++) {
+      const sy = this.oam[i * 4];
+      if (line < sy || line >= sy + h) continue;
+      if (list.length === 8) { this.status |= 0x20; break; }
+      if (i === 0) this.spr0Visible = true;
+      list.push(i);
+    }
+    this.sprList = list;
+  }
+
+  /** Sprite pattern fetch for the next line (Mesen: dots 257-320). */
+  loadSpritesHw(line) {
+    const h = (this.ctrl & 0x20) ? 16 : 8;
+    const tiles = [];
+    for (const i of this.sprList) {
+      const sy = this.oam[i * 4], tile = this.oam[i * 4 + 1], attr = this.oam[i * 4 + 2], sx = this.oam[i * 4 + 3];
+      if (sy >= 240) continue;
+      const row = (attr & 0x80) ? h - 1 - (line - sy) : line - sy;
+      const addr = h === 16 ? ((tile & 1) << 12) + ((tile & 0xfe) << 4) + (row >= 8 ? row + 8 : row) : ((this.ctrl & 0x08) << 9) + (tile << 4) + row;
+      let lo = this.chr[this.chrOffset(addr & 0x1fff)];
+      let hi = this.chr[this.chrOffset((addr + 8) & 0x1fff)];
+      if (attr & 0x40) { lo = reverseBits(lo); hi = reverseBits(hi); }
+      tiles.push({ index: i, x: sx, lo, hi, palette: 0x10 | ((attr & 3) << 2), behind: (attr & 0x20) !== 0 });
+      if (line !== PRERENDER) for (let k = 0; k < 8 && sx + k + 1 < 257; k++) this.hasSprite[sx + k + 1] = 1;
+    }
+    this.sprTiles = tiles;
+  }
+
+  pixelHw(line, dot) {
+    const i = line * WIDTH + dot - 1;
+    const v = this.v;
+    let color;
+    if (this.renEn || (v & 0x3f00) !== 0x3f00) {
+      const mask = this.mask;
+      let bg = 0;
+      const bgMin = (mask & 0x08) ? ((mask & 0x02) ? 0 : 8) : 300;
+      if (dot > bgMin) {
+        const sh = 15 - this.x;
+        bg = ((this.loShift >> sh) & 1) | (((this.hiShift >> sh) & 1) << 1);
+      }
+      color = -1;
+      const sprMin = (mask & 0x10) ? ((mask & 0x04) ? 0 : 8) : 300;
+      if (this.hasSprite[dot] && dot > sprMin) {
+        const tiles = this.sprTiles;
+        for (let k = 0; k < tiles.length; k++) {
+          const s = tiles[k];
+          const col = dot - s.x - 1;
+          if (col < 0 || col > 7) continue;
+          const sp = (((s.hi >> (7 - col)) & 1) << 1) | ((s.lo >> (7 - col)) & 1);
+          if (!sp) continue;
+          if (k === 0 && s.index === 0 && this.spr0Visible && bg && dot !== 256 && (mask & 0x08) && !(this.status & 0x40)) this.status |= 0x40;
+          if (!bg || !s.behind) color = this.palette[s.palette | sp];
+          break;
+        }
+      }
+      if (color < 0) {
+        const pal = (this.x + ((dot - 1) & 7) < 8) ? this.prevPal : this.curPal;
+        color = bg ? this.palette[pal | bg] : this.palette[0];
+      }
+    } else color = this.palette[Ppu.paletteIndex(v)];
+    this.indexBuffer[i] = color;
+    this.frame32[i] = this.rgba[color & 0x3f];
   }
 
   // ---------------------------------------------------------------- jsnes-compatible rendering

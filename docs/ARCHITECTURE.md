@@ -91,9 +91,12 @@ de retornos propia, `SwitchBank*` es opaco). Cada acceso de E/S cae en su ciclo;
 hasta ese punto exacto, cruza fronteras de frame sola (frames de lag) y entrega cada imagen (`onFrame`).
 
 Modos (`createGame({timing})`, `?timing=` en la página, env `ZELDA_TIMING`):
-`jsnes` (por defecto: reglas del oráculo de CI: frame de 89 342 puntos, render de fondo por línea como jsnes,
-PPUMASK desde la línea siguiente, hit del sprite 0 como jsnes, DMC/sample timer de jsnes), `hardware` (PPU por
-puntos, punto impar; DMC aproximado) y `off` (modelo antiguo "tiempo cero"). `strict: true` (o
+`hardware` (**por defecto en el navegador**, `src/main.js`: la consola real, píxel perfecto contra Mesen2 en
+los 72 movies: alineación CPU/PPU de encendido, PPU por puntos copia de la de Mesen, frame impar corto, NMI,
+OAM DMA y DMA del DMC de hardware con sus robos de 3-4 ciclos dentro de la instrucción; `docs/TIMING.md` §11),
+`jsnes` (por defecto en `src/headless.js`, la batería y CI: reglas del oráculo jsnes: frame de 89 342
+puntos, render de fondo por línea, PPUMASK desde la línea siguiente, hit del sprite 0 y DMC/sample timer de
+jsnes) y `off` (modelo antiguo "tiempo cero"). `strict: true` (o
 `ZELDA_TIMING_STRICT=1`) hace que una miga mal puesta o que falte lance `TimingError` con la línea del asm;
 sin estricto, el rastreador deja de contar hasta la NMI siguiente y esa NMI sigue con el modelo antiguo (RAM
 idéntica siempre: la temporización solo afecta a la imagen).

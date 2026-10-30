@@ -168,6 +168,122 @@ export class JsnesApuTiming {
   }
 }
 
-export class HardwareApuTiming extends JsnesApuTiming {
-  constructor() { super({ deferToSamples: false }); }
+// DMC rate table of the 2A03 (NTSC), in CPU cycles per output bit (hardware fact, not ROM data).
+const DMC_RATE_NTSC = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54];
+
+/**
+ * Hardware DMC fetch calendar (mode 'hardware', reference Mesen2 2.1.1; docs/TIMING.md §11). Cycles are
+ * absolute CPU cycles in the tracker's numbering (first instruction at 7; Mesen's CycleCount = ours + 1).
+ *  * The rate timer runs from power-on: it reloads with the CURRENT period at each clock, the first clock
+ *    is at cycle 426 (Mesen: timer = period = 427 at power-on, one tick per CPU cycle).
+ *  * Every clock decrements the 8-bit counter; when it reaches 0 the sample buffer moves to the shifter and,
+ *    if a byte remains, a DMA is REQUESTED at that cycle: the CPU halts before its next read cycle
+ *    (Tracker.dmaRun: halt + dummy + alignment to a "get" (even) cycle + read: 3 or 4 cycles).
+ *  * $4015 with bit 4 set and no bytes left: restart the sample and request a fetch 2 cycles later (3 when
+ *    the write cycle is even); clear: stop after the same delay.
+ * Events are processed lazily (tick(t) handles every event up to cycle t in order); nextReq() is a lower
+ * bound of the next request so the tracker can skip whole blocks.
+ */
+export class HardwareApuTiming {
+  constructor() {
+    this.onRequest = null; // (cycle) => void: the DMC asks the CPU for a DMA
+    this.reset();
+  }
+
+  reset() {
+    this.period = DMC_RATE_NTSC[0];
+    this.nextClock = 426;
+    this.bits = 8;
+    this.bufferEmpty = true;
+    this.bytes = 0;
+    this.length = 1;
+    this.loop = false;
+    this.startAt = Infinity;
+    this.disableAt = Infinity;
+    this.requests = 0;
+    this.sampleAddr = 0xc000;
+    this.addr = 0; // address of the next sample byte (the DMA reads it; see Tracker.dmaRun)
+  }
+
+  /** Processes every event at a cycle <= t (in time order). */
+  tick(t) {
+    for (;;) {
+      const c = this.nextClock;
+      const d = this.startAt < this.disableAt ? this.startAt : this.disableAt;
+      if (c > t && d > t) return;
+      if (d < c) { this.delayEvent(d); continue; }
+      if (d === c) this.delayEvent(d); // delays first (ProcessClock runs before the channel)
+      // rate timer clock
+      this.nextClock = c + this.period;
+      if (--this.bits === 0) {
+        this.bits = 8;
+        if (!this.bufferEmpty) {
+          this.bufferEmpty = true;
+          if (this.bytes > 0) this.request(c);
+        }
+      }
+    }
+  }
+
+  delayEvent(t) {
+    if (this.startAt === t) {
+      this.startAt = Infinity;
+      if (this.bufferEmpty && this.bytes > 0) this.request(t);
+    }
+    if (this.disableAt === t) {
+      this.disableAt = Infinity;
+      this.bytes = 0;
+      this.onStop?.(t);
+    }
+  }
+
+  request(t) {
+    this.requests++;
+    this.onRequest?.(t);
+  }
+
+  /** Earliest cycle at which a request can happen (from the state caught up so far). */
+  nextReq() {
+    let r = this.startAt < this.disableAt ? this.startAt : this.disableAt;
+    if (!this.bufferEmpty || this.bytes > 0) {
+      const z = this.nextClock + (this.bits - 1) * this.period;
+      if (z < r) r = z;
+    }
+    return r;
+  }
+
+  /** CPU write to $4010-$4015 at cycle t (after tick(t)). */
+  write(addr, value, t) {
+    this.tick(t);
+    if (addr === 0x4010) {
+      this.loop = (value & 0x40) !== 0;
+      this.period = DMC_RATE_NTSC[value & 0xf];
+    } else if (addr === 0x4012) {
+      this.sampleAddr = 0xc000 | (value << 6);
+    } else if (addr === 0x4013) {
+      this.length = (value << 4) + 1;
+    } else if (addr === 0x4015) {
+      // Mesen: delay 2 when its cycle counter is even (= our cycle odd), else 3
+      const delay = t % 2 === 1 ? 2 : 3;
+      if (!(value & 0x10)) {
+        if (this.disableAt === Infinity) this.disableAt = t + delay;
+      } else if (this.bytes === 0) {
+        this.bytes = this.length; // InitSample
+        this.addr = this.sampleAddr;
+        this.startAt = t + delay;
+      }
+    }
+  }
+
+  /** The DMA read of a sample byte (after its cycle was ticked). */
+  dmaRead() {
+    if (this.bytes > 0) {
+      this.bufferEmpty = false;
+      this.addr = this.addr === 0xffff ? 0x8000 : this.addr + 1;
+      if (--this.bytes === 0 && this.loop) { this.bytes = this.length; this.addr = this.sampleAddr; }
+    }
+  }
+
+  snapshot() { return { ...this }; }
+  restore(s) { Object.assign(this, s); }
 }

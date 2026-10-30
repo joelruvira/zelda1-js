@@ -19,7 +19,7 @@
 // boundaries by itself in continuous mode and reports each picture).
 import { buildProgram, refId, describe, regionOf, K_PLAIN, K_BRANCH, K_JSR, K_RTS, K_RTI, K_JMP, K_JMPIND, K_IO, F_TABLEJUMP, F_SWITCHBANK } from './cfg.js';
 import { JsnesApuTiming, HardwareApuTiming } from './apu-timing.js';
-import { OPCODES } from './opcodes.js';
+import { OPCODES, RMW } from './opcodes.js';
 
 export class TimingError extends Error {
   name = 'TimingError';
@@ -31,6 +31,11 @@ const MAX_GUARD = 2_000_000;
  * are one APU call of 9 cycles) and the PPU is at 241/1 at absolute dot 16 (dot = 3 x cycle). */
 const RESET_FIRST_CYCLE = 7;
 const POWER_ON_FRAME_DOT = 16;
+/** Mesen2 2.1.1 power-on alignment (hardware mode; RandomizeCpuPpuAlignment off: the default CPU/PPU
+ * phase): 8 reset cycles, then the first instruction; the PPU starts at scanline 0 dot 0 and the access of
+ * CPU cycle c (our numbering, first instruction at 7) sees every dot before absolute dot 3c + 7 - 7.
+ * Dot numbering stays 3 x cycle; the PPU's first dot (0/0) is at absolute dot -7. */
+const HW_LINE0_DOT = -7;
 
 export class Tracker {
   constructor() {
@@ -83,6 +88,10 @@ export class Tracker {
     for (let i = 0; i < n; i++) {
       if (this.P.kind[i] === K_BRANCH) this.brCost[i] = ((this.P.run[i] + 2) & 0xff00) !== (this.P.operand[i] & 0xff00) ? 4 : 3;
     }
+    // hardware mode: write cycles of each instruction as a mask counted from its LAST cycle (bit 0); a
+    // DMA can only halt the CPU on a read cycle (docs/TIMING.md §11)
+    this.wmask = new Uint8Array(n);
+    for (let i = 0; i < n; i++) this.wmask[i] = writeMask(OPCODES[this.P.op[i]]);
     // Plain instructions that run into a data byte $60 (RTS): GetObjectMiddle falls into
     // ObjTypeToDamagePoints, whose first byte is the routine's RTS (docs/TIMING.md §10).
     this.rtsAfter = new Set();
@@ -99,7 +108,17 @@ export class Tracker {
   setMode(mode, strict = this.strict) {
     this.mode = mode;
     this.strict = strict;
-    this.apu = mode === 'hardware' ? new HardwareApuTiming() : new JsnesApuTiming();
+    this.hw = mode === 'hardware';
+    this.apu = this.hw ? new HardwareApuTiming() : new JsnesApuTiming();
+    if (this.hw) {
+      this.apu.onRequest = () => { this.dmcRunning = true; this.needDummyRead = true; this.needHalt = true; };
+      this.apu.onStop = () => {
+        // StopDmcTransfer: a DMA not started yet is cancelled
+        if (this.dmcRunning && this.needHalt) { this.dmcRunning = false; this.needDummyRead = false; this.needHalt = false; }
+      };
+    }
+    this.needHalt = false; this.needDummyRead = false; this.dmcRunning = false;
+    this.dmaDummies = [];
   }
 
   // ------------------------------------------------------------------ failures
@@ -149,24 +168,96 @@ export class Tracker {
     if (c) return c;
     const P = this.P;
     const list = [6];
+    const wm = [WM_JSR];
     let p = entry;
     for (let guard = 0; guard < 200; guard++) {
       const k = P.kind[p];
-      if (k === K_RTS) { list.push(6); break; }
+      if (k === K_RTS) { list.push(6); wm.push(0); break; }
       if (k !== K_PLAIN && k !== K_IO) throw new TimingError(`opaque routine with decisions: ${describe(P, p)}`);
       list.push(P.cycles[p]);
+      wm.push(this.wmask[p]);
       p = P.next[p];
     }
-    c = { list, total: list.reduce((a, b) => a + b, 0) };
+    c = { list, wm, total: list.reduce((a, b) => a + b, 0) };
     this.opaque.set(entry, c);
     return c;
   }
 
   // ------------------------------------------------------------------ clock + APU
-  /** One APU call of n cycles that ends at the current cycle (+ the DMC halts it causes). */
-  call(n) {
+  /**
+   * One APU call of n cycles that ends at the current cycle (+ the DMC halts it causes). Hardware mode:
+   * one instruction of n bus cycles (write mask `wm`, see writeMask) that has just been added to the
+   * clock; the DMA halts that fall inside it are inserted before its read cycles.
+   */
+  call(n, wm = 0) {
+    if (this.hw) { this.cycle -= n; this.hwExec(n, wm, -1); return; }
     const f = this.apu.call(n);
     if (f) this.halt(4 * f);
+  }
+
+  // ------------------------------------------------------------------ hardware CPU bus (DMA halts)
+  /**
+   * Executes n bus cycles from the current cycle (instruction with write mask wm). A pending DMA halts
+   * the CPU before a read cycle (Mesen2 NesCpu::ProcessPendingDma). Returns the absolute cycle of bus
+   * cycle `ai` (-1: none) and leaves this.cycle after the last one.
+   */
+  hwExec(n, wm, ai) {
+    const s = this.cycle;
+    this.haltAt = -1;
+    if (!this.needHalt && this.apu.nextReq() >= s + n) {
+      this.cycle = s + n;
+      return ai >= 0 ? s + ai : -1;
+    }
+    let t = s, acc = -1;
+    for (let i = 0; i < n; i++) {
+      if (this.needHalt && !((wm >> (n - 1 - i)) & 1)) {
+        this.haltAt = i;
+        this.haltDmc = this.dmcRunning;
+        this.haltDmcAddr = this.apu.addr;
+        t += this.dmaRun(t);
+      }
+      if (i === ai) acc = t;
+      this.apu.tick(t);
+      t++;
+    }
+    this.cycle = t;
+    return acc;
+  }
+
+  /**
+   * The DMA unit takes the bus at read cycle t (halt cycle first): DMC fetch and/or OAM DMA, as Mesen2's
+   * ProcessPendingDma (get cycles are the even ones in our numbering). Returns the cycles used.
+   */
+  dmaRun(t) {
+    const apu = this.apu;
+    let c = t;
+    this.needHalt = false;
+    const dummies = this.dmaDummies; // cycles on which the CPU's pending read is repeated (halt, dummies)
+    dummies.length = 0;
+    dummies.push(c);
+    apu.tick(c++); // halt cycle
+    let sprCount = 0;
+    const flags = () => {
+      if (this.needHalt) this.needHalt = false;
+      else if (this.needDummyRead) this.needDummyRead = false;
+    };
+    while (this.dmcRunning || this.spriteDma) {
+      if (c % 2 === 0) { // get cycle
+        if (this.dmcRunning && !this.needHalt && !this.needDummyRead) {
+          if (this.log) this.log.push({ k: 'D', c });
+          flags(); apu.tick(c++);
+          this.dmcRunning = false;
+          apu.dmaRead();
+        } else if (this.spriteDma) {
+          flags(); apu.tick(c++);
+          sprCount++;
+        } else { flags(); dummies.push(c); apu.tick(c++); }
+      } else if (this.spriteDma && (sprCount & 1)) {
+        flags(); apu.tick(c++);
+        if (++sprCount === 0x200) this.spriteDma = false;
+      } else { flags(); dummies.push(c); apu.tick(c++); }
+    }
+    return c - t;
   }
 
   /** CPU halted `n` cycles (DMC fetches, OAM DMA): jsnes clocks the APU in chunks of up to 8. */
@@ -192,6 +283,11 @@ export class Tracker {
     const P = this.P;
     let cost = this.segCost[p];
     if (!cost) return;
+    if (this.hw) {
+      if (!this.needHalt && !this.pxPending && !this.diag && this.apu.nextReq() >= this.cycle + cost + 1) { this.cycle += cost; return; }
+      for (let q = p; P.kind[q] === K_PLAIN; q = P.next[q]) this.hwExec(P.cycles[q] + (P.penalty[q] ? this.takePx(q) : 0), this.wmask[q], -1);
+      return;
+    }
     let last = this.segLast[p];
     const pxl = this.segPx[p];
     const precise = this.apu.safeCycles() <= cost + 8;
@@ -253,7 +349,7 @@ export class Tracker {
             this.bank = this.bankQ.shift();
             const oc = this.opaqueCosts(t);
             this.cycle += 3; this.call(3);
-            for (let k = 1; k < oc.list.length; k++) { this.cycle += oc.list[k]; this.call(oc.list[k]); }
+            for (let k = 1; k < oc.list.length; k++) { this.cycle += oc.list[k]; this.call(oc.list[k], oc.wm[k]); }
             p = this.stack[--this.sp];
             continue;
           }
@@ -270,7 +366,8 @@ export class Tracker {
             if (!this.bankQ.length) { this.pos = p; this.fail('JSR SwitchBank but the JS did not call switchBank()'); return -1; }
             this.bank = this.bankQ.shift();
             const oc = this.opaqueCosts(t);
-            if (this.apu.safeCycles() > oc.total + 8) {
+            if (this.hw) for (let k = 0; k < oc.list.length; k++) this.hwExec(oc.list[k], oc.wm[k], -1);
+            else if (this.apu.safeCycles() > oc.total + 8) {
               this.cycle += oc.total;
               const fx = this.apu.bulk(oc.total, 6);
               if (fx) this.halt(4 * fx);
@@ -280,7 +377,7 @@ export class Tracker {
           }
           if (this.sp >= this.stack.length) { this.pos = p; this.fail('shadow stack overflow'); return -1; }
           this.stack[this.sp++] = P.next[p];
-          this.cycle += 6; this.call(6);
+          this.cycle += 6; this.call(6, WM_JSR);
           p = t;
           continue;
         }
@@ -364,6 +461,7 @@ export class Tracker {
       return -1;
     }
     const c = P.cycles[p] + (P.penalty[p] ? this.takePx(p) : 0);
+    if (this.hw) return this.ioHw(p, c, reg, isWrite, value);
     const acc = this.cycle + c - 1;
     if (this.log) this.log.push({ k: isWrite ? 'w' : 'r', a: reg, c: acc, id: p, v: value });
     if (reg < 0x4000 || reg === 0x4014 || reg >= 0x8000) this.ppu.syncTo(3 * acc);
@@ -381,10 +479,48 @@ export class Tracker {
     return acc;
   }
 
+  /** io() in hardware mode: the access is the last bus cycle (DMA halts before it shift it). */
+  ioHw(p, c, reg, isWrite, value) {
+    const acc = this.hwExec(c, this.wmask[p], c - 1);
+    // a DMC fetch that halts the CPU on its $4016/$4017 read reads the register once more (the halt
+    // cycle repeats the read): the controller shifts one extra bit, unless the DMC reads the same low
+    // address bits (Mesen2 NesCpu::ProcessPendingDma, NES-001 behaviour)
+    if (!isWrite && (reg === 0x4016 || reg === 0x4017) && this.haltAt === c - 1 && this.haltDmc &&
+      (this.haltDmcAddr & 0x1f) !== (reg & 0x1f)) this.inputGlitch = reg;
+    // the halt and dummy cycles of a DMA repeat a PPU register read (side effects: $2002 clears the
+    // vblank flag and the w latch, $2007 moves v unless two reads are under 6 dots apart)
+    if (!isWrite && this.haltAt === c - 1 && (reg === 0x2002 || reg === 0x2007)) {
+      const ppu = this.ppu;
+      for (const h of this.dmaDummies) {
+        ppu.syncTo(3 * h);
+        if (reg === 0x2002) ppu.readStatus(); else ppu.readData();
+      }
+    }
+    if (reg < 0x4000 || reg === 0x4014 || reg >= 0x8000) this.ppu.syncTo(3 * acc);
+    if (this.log) this.log.push({ k: isWrite ? 'w' : 'r', a: reg, c: acc, id: p, v: value, l: this.ppu.line, d: this.ppu.dot - 1 });
+    if (isWrite) {
+      if (reg >= 0x4010 && reg <= 0x4015) this.apu.write(reg, value, acc);
+      if (reg === 0x2000) this.noteCtrl(value, acc);
+    }
+    this.pos = this.P.next[p];
+    if (isWrite && reg === 0x4014) {
+      // OAM DMA: the CPU halts at its next read cycle (the next opcode fetch, or the NMI's first read)
+      this.spriteDma = true;
+      this.needHalt = true;
+      this.cycle += this.dmaRun(this.cycle);
+    }
+    return acc;
+  }
+
   /** $2000 write: NMI enable bookkeeping (also called by the bus when not tracking). */
   noteCtrl(value, acc) {
     const en = (value & 0x80) !== 0;
-    if (en && !this.nmiEnabled && this.ppu) {
+    if (en && !this.nmiEnabled && this.ppu && this.hw) {
+      // Mesen2: the NMI line rises during the write if the vblank flag is set, or later in the same cycle
+      // when the PPU reaches 241/1 (dot 3*acc); the NMI follows the next instruction either way
+      const ppu = this.ppu;
+      if ((ppu.status & 0x80) || (acc >= 0 && ppu.vblankDotNext() === 3 * acc)) this.nmiPend = 'one';
+    } else if (en && !this.nmiEnabled && this.ppu) {
       // rising enable: edge now if the vblank flag is set (1-delay: NMI after the next instruction)
       if (this.ppu.status & 0x80) this.nmiPend = 'one';
       else {
@@ -398,7 +534,8 @@ export class Tracker {
 
   /** Bus write while not tracking (tracker enabled, failed NMI): keep the APU/NMI state. */
   noteWrite(addr, value) {
-    if (addr >= 0x4000 && addr < 0x4018) this.apu.write(addr, value);
+    if (this.hw) { if (addr >= 0x4010 && addr <= 0x4015) this.apu.write(addr, value, this.cycle); }
+    else if (addr >= 0x4000 && addr < 0x4018) this.apu.write(addr, value);
     else if ((addr & 0xe007) === 0x2000) this.noteCtrl(value, -1);
   }
 
@@ -413,7 +550,7 @@ export class Tracker {
       return;
     }
     const entry = this.resolve(p);
-    this.cycle += 6; this.call(6); // JSR (the return address is popped by TableJump's PLA/PLA)
+    this.cycle += 6; this.call(6, WM_JSR); // JSR (the return address is popped by TableJump's PLA/PLA)
     // page-cross hints of the two LDA ($00),Y: pointer = table - 1, Y = index*2 + 1, + 2
     const ptr = (tableAddr - 1) & 0xffff;
     const y1 = ((index << 1) + 1) & 0xff;
@@ -491,6 +628,7 @@ export class Tracker {
    * nmiStart: first cycle of its 7-cycle sequence}.
    */
   runUntil({ stopAtRti = true } = {}) {
+    if (this.hw) return this.runUntilHw(stopAtRti);
     const P = this.P;
     const ppu = this.ppu;
     if (this.pos < 0) return { rti: null, nmi: null };
@@ -565,6 +703,66 @@ export class Tracker {
     return this.lost('runUntil: no NMI');
   }
 
+  /**
+   * runUntil in hardware mode (Mesen2 rules): the NMI edge is seen at the end of the cycle c in which the
+   * PPU sets the vblank flag (dot 241/1 <= 3c); the NMI sequence follows the instruction whose last cycle
+   * is c+1 or later (an instruction that ends with cycle c is followed by one more). DMA halts are part
+   * of the instruction whose read they precede.
+   */
+  runUntilHw(stopAtRti) {
+    const P = this.P;
+    const ppu = this.ppu;
+    if (this.pos < 0) return { rti: null, nmi: null };
+    ppu.syncTo(3 * this.cycle);
+    let rti = null;
+    for (let guard = 0; guard < MAX_GUARD; guard++) {
+      const p = this.pos;
+      const s = this.cycle;
+      const kind = P.kind[p];
+      const idle = kind === K_JMP && P.target[p] === p;
+      if (idle && this.intStack.length && rti === null) this.intStack.length = 0; // JMP IsrReset from an NMI
+      // idle loop with nothing pending: skip whole JMPs that end before the edge can matter
+      if (idle && this.nmiPend === null && !this.needHalt) {
+        const v = this.vblankAfter(3 * s - 3); // edges of cycle s or later
+        const k = Math.floor((Math.ceil(v / 3) - 1 - s) / 3) - 1;
+        if (k > 1 && this.apu.nextReq() >= s + 3 * k + 1) { this.cycle += 3 * k; continue; }
+      }
+      // execute one instruction
+      let c, next, wm = 0;
+      if (kind === K_PLAIN) { c = P.cycles[p] + (P.penalty[p] ? this.takePx(p) : 0); next = P.next[p]; wm = this.wmask[p]; }
+      else if (kind === K_JMP) { c = 3; next = this.resolve(p); }
+      else if (kind === K_RTS) {
+        if (this.sp === 0) return this.lost('RTS with an empty shadow stack');
+        c = 6; next = this.stack[--this.sp];
+      } else if (kind === K_JSR && !(P.flags[this.resolve(p)] & (F_TABLEJUMP | F_SWITCHBANK))) {
+        c = 6; wm = WM_JSR; this.stack[this.sp++] = P.next[p]; next = this.resolve(p);
+      } else if (kind === K_RTI) {
+        c = 6;
+        next = this.intStack.length ? this.intStack.pop() : this.idLoopForever;
+        this.sp = 0;
+      } else return this.lost(`code with a decision after the JS ended: ${describe(P, p)}`);
+      this.pos = next;
+      this.hwExec(c, wm, -1);
+      const e = this.cycle;
+      if (kind === K_RTI) { rti = e; this.rtiStart = s; this.log?.push({ k: 'rti', c: e, s }); }
+      let take = this.nmiPend === 'one';
+      this.nmiPend = null;
+      if (!take && this.nmiEnabled) {
+        const v = this.vblankAfter(3 * s - 3);
+        const ce = Math.ceil(v / 3); // edge seen at the end of cycle ce
+        if (ce <= e - 2) take = true;
+        else if (ce === e - 1) this.nmiPend = 'one';
+      }
+      if (take) {
+        const start = this.cycle;
+        this.hwExec(7, WM_INT, -1); // NMI sequence: 2 reads, 3 pushes, 2 vector reads
+        return { rti, nmi: this.cycle, nmiStart: start };
+      }
+      if (rti !== null && stopAtRti) return { rti, nmi: null };
+    }
+    return this.lost('runUntil: no NMI');
+  }
+
   /** Absolute dot of the first vblank (frame start, 241/1) after dot d. */
   vblankAfter(d) {
     const ppu = this.ppu;
@@ -588,7 +786,8 @@ export class Tracker {
   beginReset() {
     this.apu.reset();
     this.cycle = RESET_FIRST_CYCLE;
-    this.ppu.powerOn(POWER_ON_FRAME_DOT);
+    if (this.mode === 'hardware') this.ppu.powerOnAtLine0(HW_LINE0_DOT);
+    else this.ppu.powerOn(POWER_ON_FRAME_DOT);
     this.pos = this.idIsrReset;
     this.sp = 0;
     this.intStack.length = 0;
@@ -601,9 +800,10 @@ export class Tracker {
     this.bank = 0;
     this.synced = true;
     this.on = true;
+    this.needHalt = false; this.needDummyRead = false; this.dmcRunning = false; this.spriteDma = false;
     // jsnes clocks the reset sequence with the first instruction (one APU call of 9 cycles); no
     // sample boundary falls before cycle 38, so a separate call is equivalent
-    this.apu.call(RESET_FIRST_CYCLE);
+    if (!this.hw) this.apu.call(RESET_FIRST_CYCLE);
   }
 }
 
@@ -614,6 +814,7 @@ Object.assign(Tracker.prototype, {
     this.ppu = machine.ppu;
     this.mapper = machine.mapper;
     this.ppu.jsnesCompat = this.mode === 'jsnes';
+    this.ppu.hardware = this.mode === 'hardware';
     this.pending = null;
     this.frames = 0;
     this.idRti = -1;
@@ -670,6 +871,7 @@ Object.assign(Tracker.prototype, {
         if (s !== null && s !== undefined) { r.nmi = s + (r.nmi - r.nmiStart); r.nmiStart = s; this.cycle = r.nmi; }
       }
       this.log?.push({ k: 'begin', c: r.nmi, start: r.nmiStart, n: this.nmiCount + 1 });
+      this.lastNmiStart = r.nmiStart;
       this.beginNmi(this.pos);
       let ok = false;
       try {
@@ -691,6 +893,20 @@ Object.assign(Tracker.prototype, {
    */
   finishPicture(rtiEnd, nmiStart = null) {
     const ppu = this.ppu;
+    if (this.hw) {
+      // Mesen2: the picture of a frame is the first one completed (scanline 240 dot 0) after the RTI's
+      // opcode fetch, i.e. after every dot up to 3 * rtiStart - 3 (a DMA halt in the RTI comes later).
+      const due = 3 * (this.rtiStart ?? rtiEnd - 6) - 2;
+      this.pictureDue = due;
+      ppu.syncTo(3 * rtiEnd);
+      // render ahead only up to this frame's 240/0: the next NMI (vblank) comes before any later picture,
+      // which is then completed (onPicture) while the next frames run
+      // (only when this frame's vblank is the one that started the NMI just finished: a later vblank means
+      // another NMI is pending)
+      const p = ppu.pictureDot();
+      if (p >= due && ppu.absDot <= p && nmiStart === null && this.nmiPend === null && ppu.frameStart <= 3 * this.lastNmiStart) ppu.syncTo(p + 1);
+      return;
+    }
     const d = 3 * (rtiEnd - 6);
     if (ppu.frameStart > d) return; // the PPU is already past the RTI's frame start
     if (nmiStart !== null) { ppu.syncTo(3 * nmiStart); return; }
@@ -748,6 +964,19 @@ export function pollStatus(ppu, mask, untilSet) {
   // catch-up model: the sprite-0 waits move the PPU clock; the vblank waits of IsrReset only read
   if (mask === 0x40) ppu.waitStatus(mask, untilSet);
   return ppu.readStatus();
+}
+
+/** Write cycles of an instruction, counted from its last cycle (bit 0 = last). */
+const WM_JSR = 0b110; // JSR: R R R W W R
+const WM_INT = 0b11100; // NMI/BRK sequence: R R W W W R R
+function writeMask(info) {
+  if (!info) return 0;
+  const mn = info.mn;
+  if (mn === 'STA' || mn === 'STX' || mn === 'STY' || mn === 'PHA' || mn === 'PHP') return 1;
+  if (RMW.has(mn) && info.mode !== 'acc') return 0b11;
+  if (mn === 'JSR') return WM_JSR;
+  if (mn === 'BRK') return WM_INT;
+  return 0;
 }
 
 void regionOf; void K_IDLE;
