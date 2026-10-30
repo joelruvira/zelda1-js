@@ -69,4 +69,4 @@ Se guardan solas en el navegador, igual que en el cartucho original. Juega siemp
 
 ---
 
-<sub>The Legend of Zelda es una marca de Nintendo. Proyecto de fans sin ánimo de lucro y sin relación con Nintendo. Este repositorio no contiene ningún dato del juego original.</sub>
+<sub>The Legend of Zelda es una marca de Nintendo. Proyecto de fans sin ánimo de lucro y sin relación con Nintendo. Este repositorio no contiene ningún dato del juego original. El código se publica bajo la licencia [GPL-3.0](LICENSE); la parte que dibuja la imagen como la consola real sigue el funcionamiento del emulador [Mesen2](https://github.com/SourMesen/Mesen2), también GPL-3.0.</sub>

@@ -2,6 +2,7 @@
   "name": "zelda-port",
   "version": "0.1.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "description": "Faithful routine-by-routine JavaScript port of The Legend of Zelda (NES). Requires the user's own ROM; contains no Nintendo assets.",
   "type": "module",
   "engines": {
