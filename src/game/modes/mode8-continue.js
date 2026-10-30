@@ -14,13 +14,14 @@ import { PatchAndCueLevelPalettesTransferAndAdvanceSubmode } from './mode3-unfur
 import { ClearRoomHistory } from '../objects/killcounts.js';
 import { ResetPlayerState } from './mode4-6-enterleave.js';
 import { SilenceAllSound } from '../audio/requests.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitMode8 (Z_05): submode 0 = palettes + reset room history; then cue the mode 8 text. */
 export function InitMode8() {
   // InitMode8 (Z_05)
   TurnOffAllVideo();
   const a = ram[GameSubmode];
-  if (a === 0) {
+  if (!$br('Z_05:1372', a !== 0)) {
     ram[UndergroundExitType] = a; // reset
     TurnOffVideoAndClearArtifacts();
     PatchAndCueLevelPalettesTransferAndAdvanceSubmode();
@@ -36,36 +37,40 @@ export function InitMode8() {
  */
 export function UpdateMode8ContinueQuestion_Full() {
   // UpdateMode8ContinueQuestion_Full (Z_05)
-  if (ram[GameSubmode] & 0x80) return Mode8AnimateSelection();
-  if (ram[ButtonsPressed] & 0x10) {
+  if ($br('Z_05:2205', (ram[GameSubmode] & 0x80) !== 0)) return Mode8AnimateSelection();
+  if ($br('Z_05:2208', (ram[ButtonsPressed] & 0x10) !== 0)) {
     // @ActivateOption
     ram[GameSubmode] |= 0x80;
     ram[ObjTimer + 1] = 0x40;
     return;
   }
-  if (ram[ButtonsPressed] & 0x20) {
+  if (!$br('Z_05:2211', (ram[ButtonsPressed] & 0x20) === 0)) {
     ram[Tune0Request] = 0x01; // short sound for Select
     ram[GameSubmode]++;
-    if (ram[GameSubmode] === 0x03) ram[GameSubmode] = 0x00;
+    if (!$br('Z_05:2220', ram[GameSubmode] !== 0x03)) ram[GameSubmode] = 0x00;
   }
   // @DrawCursor
   const base = table(bus.rom, 'Mode8BaseSpriteValues');
-  for (let y = 2; y >= 0; y--) ram[Sprites + 1 + y] = base.byte(y);
-  ram[Sprites] = table(bus.rom, 'Mode8SpriteYs').byte(ram[GameSubmode]);
+  for (let y = 2; ;) { $pxa('Z_05:2227', base.addr, y); ram[Sprites + 1 + y] = base.byte(y); y--; if (!$br('Z_05:2230', y >= 0)) break; }
+  const ys = table(bus.rom, 'Mode8SpriteYs');
+  $pxa('Z_05:2234', ys.addr, ram[GameSubmode]);
+  ram[Sprites] = ys.byte(ram[GameSubmode]);
 }
 
 // @AnimateSelection and @HandleActivated of UpdateMode8ContinueQuestion_Full.
 function Mode8AnimateSelection() {
-  if (ram[ObjTimer + 1] === 0) {
+  if ($br('Z_05:2248', ram[ObjTimer + 1] === 0)) {
     // @HandleActivated
     ram[GameSubmode] &= 0x03;
     ResetPlayerState();
     let y = ram[GameSubmode];
-    ram[GameMode] = table(bus.rom, 'Mode8SelectionToMode').byte(y); // 3 continue, $D save, 0 retry
+    const modes = table(bus.rom, 'Mode8SelectionToMode');
+    $pxa('Z_05:2290', modes.addr, y);
+    ram[GameMode] = modes.byte(y); // 3 continue, $D save, 0 retry
     ram[HeartValues] = (ram[HeartValues] & 0xf0) | 0x02; // 3 full hearts
     ram[HeartPartial] = 0xff;
     EndGameMode();
-    if (y === 0x02) {
+    if (!$br('Z_05:2300', y !== 0x02)) {
       y--;
       ram[GameSubmode] = y; // retry: next mode starts in submode 1, updating
       ram[IsUpdatingMode]++;
@@ -73,7 +78,9 @@ function Mode8AnimateSelection() {
     return SilenceAllSound();
   }
   const rec = table(bus.rom, 'Mode8FlashTransferRecord');
-  for (let y = 4; y >= 0; y--) ram[DynTileBuf + y] = rec.byte(y);
-  ram[DynTileBuf + 1] = table(bus.rom, 'Mode8FlashAttrsAddrLo').byte(ram[GameSubmode] & 0x03);
-  ram[DynTileBuf + 3] = (ram[ObjTimer + 1] & 0x04) ? 0x55 : 0x00; // every 4 frames, another palette
+  for (let y = 4; ;) { $pxa('Z_05:2254', rec.addr, y); ram[DynTileBuf + y] = rec.byte(y); y--; if (!$br('Z_05:2257', y >= 0)) break; }
+  const lo = table(bus.rom, 'Mode8FlashAttrsAddrLo');
+  $pxa('Z_05:2265', lo.addr, ram[GameSubmode] & 0x03);
+  ram[DynTileBuf + 1] = lo.byte(ram[GameSubmode] & 0x03);
+  ram[DynTileBuf + 3] = !$br('Z_05:2273', (ram[ObjTimer + 1] & 0x04) === 0) ? 0x55 : 0x00; // every 4 frames, another palette
 }

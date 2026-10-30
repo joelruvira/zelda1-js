@@ -6,11 +6,12 @@ import { ObjState, ObjAnimCounter } from '../../core/vars.js';
 import { UpdateSwordOrRod } from './sword.js';
 import { UpdateArrowOrBoomerang } from './arrow.js';
 import { WieldWeapon } from './wield.js';
+import { $br } from '../../core/timing.js';
 
 /** UpdateRodOrArrow (Z_07). X = $12. */
 export function UpdateRodOrArrow(x) {
   // UpdateRodOrArrow (Z_07)
-  if ((ram[ObjState + x] & 0xf0) >= 0x30) return UpdateSwordOrRod(x);
+  if ($br('Z_07:4367', (ram[ObjState + x] & 0xf0) >= 0x30)) return UpdateSwordOrRod(x);
   return UpdateArrowOrBoomerang(x);
 }
 
@@ -18,7 +19,7 @@ export function UpdateRodOrArrow(x) {
 export function WieldRod() {
   // WieldRod (Z_05)
   const x = 0x12;
-  if (ram[ObjState + x] !== 0) return; // L14EC6_Exit
+  if ($br('Z_05:3041', ram[ObjState + x] !== 0)) return; // L14EC6_Exit
   ram[ObjAnimCounter + x] = 0x05;
   return WieldWeapon(0x31, x);
 }

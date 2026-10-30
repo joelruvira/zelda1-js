@@ -5,6 +5,7 @@
 import { ram, sram } from '../../core/ram.js';
 import { switchBank, tableJump } from '../../core/asm.js';
 import { label } from '../../core/rom.js';
+import { $br } from '../../core/timing.js';
 import {
   InitializedGame, SaveRamBegin, SaveRamEnd, GameMode, GameSubmode, IsUpdatingMode,
   TransferredCommonPatterns, TransferredDemoPatterns, LevelKillCounts, IsSprite0CheckActive,
@@ -41,7 +42,7 @@ import { InitMode13_Full, UpdateMode13WinGame } from './mode13-ending.js';
 
 export function InitializeGameOrMode() {
   // InitializeGameOrMode (Z_07)
-  if (ram[InitializedGame] !== 0) return InitMode();
+  if ($br('Z_07:1259', ram[InitializedGame] !== 0)) return InitMode();
   switchBank(1);
   CopyCommonCodeToRam();
   switchBank(6);
@@ -64,11 +65,11 @@ export function InitMode() {
 
 export function InitMode0() {
   // InitMode0 (Z_07)
-  if (ram[TransferredCommonPatterns] !== 0x5a) {
+  if (!$br('Z_07:1304', ram[TransferredCommonPatterns] === 0x5a)) {
     switchBank(2);
     return TransferCommonPatterns();
   }
-  if (ram[TransferredDemoPatterns] !== 0xa5) {
+  if (!$br('Z_07:1311', ram[TransferredDemoPatterns] === 0xa5)) {
     switchBank(1);
     return TransferDemoPatterns();
   }
@@ -85,11 +86,11 @@ export function InitMode1() {
 export function InitMode2() {
   // InitMode2 (Z_07)
   TurnOffAllVideo();
-  if (ram[GameSubmode] === 0) {
+  if (!$br('Z_07:1328', ram[GameSubmode] !== 0)) {
     // Submode 0: transfer level pattern blocks and copy common code.
     ClearRoomHistory();
     const a = 0x00; // ClearRoomHistory returns A = 0 (LDA #$00)
-    for (let y = 0x7f; y >= 0; y--) ram[LevelKillCounts + y] = a; // clear level kill counts
+    for (let y = 0x7f; ;) { ram[LevelKillCounts + y] = a; y--; if (!$br('Z_07:1340', y >= 0)) break; } // clear level kill counts
     switchBank(3);
     TransferLevelPatternBlocks();
     switchBank(1);
@@ -103,12 +104,14 @@ export function InitMode7() {
   // InitMode7 (Z_07)
   switchBank(5);
   InitMode7Submodes();
-  if (ram[IsSprite0CheckActive] === 0) return;
+  if ($br('Z_07:1358', ram[IsSprite0CheckActive] === 0)) return;
   // After the last submode (5 or 6), sprite-0 check was enabled: set the mirroring for scrolling.
-  if (ram[_Unknown_F3] !== 0) return;
+  if ($br('Z_07:1363', ram[_Unknown_F3] !== 0)) return;
   ram[_Unknown_F3]++;
   // Facing horizontally: vertical mirroring ($0E); else horizontal ($0F).
-  return SetMMC1Control(ram[ObjDir] < 0x04 ? 0x0e : 0x0f);
+  if ($br('Z_07:1370', ram[ObjDir] < 0x04)) return SetMMC1Control(0x0e);
+  $br('Z_07:1372', true);
+  return SetMMC1Control(0x0f);
 }
 
 export function InitModeEandF() {
@@ -143,7 +146,7 @@ export function UpdateMode7Scroll() {
   switchBank(5);
   UpdateMode7SubmodeAndDrawLink();
   const a = ram[IsSprite0CheckActive];
-  if (a !== 0) return; // still checking sprite 0
+  if ($br('Z_07:1682', a !== 0)) return; // still checking sprite 0
   ram[_Unknown_F3] = a; // reset [$F3]
   return SetMMC1Control(0x0f); // horizontal mirroring, normal PRG bank mode
 }

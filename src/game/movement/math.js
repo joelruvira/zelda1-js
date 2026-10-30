@@ -8,6 +8,7 @@
 import { ram, cpu } from '../../core/ram.js';
 import { read } from '../../core/bus.js';
 import { label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjPosFrac, ObjQSpeedFrac, ObjGridOffset, PositiveGridCellSize, NegativeGridCellSize,
   ObjX, ObjY, ObjState, ObjMovingLimit,
@@ -15,11 +16,13 @@ import {
 
 /** LDA OppositeDirs, Y (Y may be $FF: the 6502 reads past the table, so do we). */
 function oppositeDirs(y) {
+  $pxa('Z_01:3613', label('OppositeDirs').addr, y);
   return read((label('OppositeDirs').addr + y) & 0xffff);
 }
 
-/** LDA ReverseDirections, Y (bank 1 data in WRAM). */
-export function reverseDirections(y) {
+/** LDA ReverseDirections, Y (bank 1 data in WRAM). `ref`: asm line of that read (page-cross hint). */
+export function reverseDirections(y, ref) {
+  if (ref) $pxa(ref, label('ReverseDirections').addr, y);
   return read((label('ReverseDirections').addr + y) & 0xffff);
 }
 
@@ -30,11 +33,15 @@ export function reverseDirections(y) {
  */
 export function AddQSpeedToPositionFraction(x) {
   // AddQSpeedToPositionFraction (Z_01)
+  $pxa('Z_01:3519', ObjPosFrac, x);
+  $pxa('Z_01:3521', ObjQSpeedFrac, x);
+  $pxa('Z_01:3527', ObjGridOffset, x);
+  $pxa('Z_01:3544', ObjGridOffset, x);
   const sum = ram[ObjPosFrac + x] + ram[ObjQSpeedFrac + x];
   ram[ObjPosFrac + x] = sum;
   let c = sum >> 8; // PHP
   const g = ram[ObjGridOffset + x];
-  if (g === ram[PositiveGridCellSize] || g === ram[NegativeGridCellSize]) c = 0; // @ClearCarry
+  if ($br('Z_01:3529', g === ram[PositiveGridCellSize]) || !$br('Z_01:3531', g !== ram[NegativeGridCellSize])) c = 0; // @ClearCarry
   ram[ObjGridOffset + x] = g + c; // ADC #$00
   cpu.c = c; // PLP
   return c;
@@ -46,11 +53,15 @@ export function AddQSpeedToPositionFraction(x) {
  */
 export function SubQSpeedFromPositionFraction(x) {
   // SubQSpeedFromPositionFraction (Z_01)
+  $pxa('Z_01:3558', ObjPosFrac, x);
+  $pxa('Z_01:3560', ObjQSpeedFrac, x);
+  $pxa('Z_01:3566', ObjGridOffset, x);
+  $pxa('Z_01:3583', ObjGridOffset, x);
   const diff = ram[ObjPosFrac + x] - ram[ObjQSpeedFrac + x];
   ram[ObjPosFrac + x] = diff;
   let c = diff >= 0 ? 1 : 0; // PHP
   const g = ram[ObjGridOffset + x];
-  if (g === ram[PositiveGridCellSize] || g === ram[NegativeGridCellSize]) c = 1; // @SetCarry
+  if ($br('Z_01:3568', g === ram[PositiveGridCellSize]) || !$br('Z_01:3570', g !== ram[NegativeGridCellSize])) c = 1; // @SetCarry
   ram[ObjGridOffset + x] = g - (1 - c); // SBC #$00
   cpu.c = c; // PLP
   return c;
@@ -68,9 +79,9 @@ export function GetOppositeDir(a) {
   for (;;) {
     const c = a & 1; // LSR
     a >>= 1;
-    if (c) break;
+    if ($br('Z_01:3609', c !== 0)) break;
     y = (y - 1) & 0xff; // DEY
-    if (y & 0x80) break; // BPL
+    if (!$br('Z_01:3611', !(y & 0x80))) break; // BPL
   }
   return { a: oppositeDirs(y), y };
 }
@@ -79,7 +90,7 @@ export function GetOppositeDir(a) {
 export function Abs(a) {
   // Abs (Z_01)
   a &= 0xff;
-  if (!(a & 0x80)) return a; // BPL
+  if ($br('Z_01:3623', !(a & 0x80))) return a; // BPL
   return Negate(a); // falls through
 }
 
@@ -98,10 +109,12 @@ export function GetDirectionsAndDistancesToTarget(a, x) {
   // GetDirectionsAndDistancesToTarget (Z_01)
   const target = a & 0xff; // PHA / TAY
   ram[0x0a] = 0x02;
-  ram[0x03] = GetOneDirectionAndDistanceToTarget(ram[ObjX + target], ram[ObjX + x]);
+  $pxa('Z_01:3693', ObjX, target);
+  ram[0x03] = GetOneDirectionAndDistanceToTarget(ram[ObjX + target], ram[(ObjX + x) & 0xff]);
   ram[0x0b] = ram[0x0a];
   ram[0x0a] = 0x08; // PLA / TAY
-  const d = GetOneDirectionAndDistanceToTarget(ram[ObjY + target], ram[ObjY + x]);
+  $pxa('Z_01:3705', ObjY, target);
+  const d = GetOneDirectionAndDistanceToTarget(ram[ObjY + target], ram[(ObjY + x) & 0xff]);
   ram[0x04] = d;
   return d;
 }
@@ -114,23 +127,23 @@ export function _CalcDiagonalSpeedIndex(y) {
   // _CalcDiagonalSpeedIndex (Z_01)
   ram[0x00] = y;
   ram[0x01] = 0xff;
-  if (ram[0x03] < ram[0x04]) {
+  if (!$br('Z_01:3743', ram[0x03] >= ram[0x04])) {
     const t = ram[0x03]; // PHA
     ram[0x03] = ram[0x04];
     ram[0x04] = t; // PLA
     ram[0x01] = 0x01;
   }
   // @Swap
-  if (((ram[0x03] - ram[0x04]) & 0xff) >= 0x08) {
+  if (!$br('Z_01:3760', ((ram[0x03] - ram[0x04]) & 0xff) < 0x08)) {
     let a;
     do {
       // @Turn
       a = (ram[0x00] + ram[0x01]) & 0xff;
       ram[0x00] = a;
-      if (a === 0x00 || a === 0x08) break;
+      if ($br('Z_01:3773', a === 0x00) || $br('Z_01:3775', a === 0x08)) break;
       a = (ram[0x03] - ram[0x04]) & 0xff;
       ram[0x03] = a;
-    } while (a >= ram[0x04]);
+    } while ($br('Z_01:3784', a >= ram[0x04]));
   }
   return ram[0x00]; // @Return: LDY $00
 }
@@ -139,11 +152,11 @@ export function _CalcDiagonalSpeedIndex(y) {
 export function SetBoomerangSpeed(a, x) {
   // SetBoomerangSpeed (Z_01)
   ram[ObjQSpeedFrac + x] = a;
-  if ((ram[ObjState + x] & 0xf0) !== 0x40) return;
+  if ($br('Z_01:3802', (ram[(ObjState + x) & 0xff] & 0xf0) !== 0x40)) return;
   ram[ObjQSpeedFrac + x] >>= 1; // LSR: half speed in major state $40
   ram[ObjMovingLimit + x]--;
-  if (ram[ObjMovingLimit + x] !== 0) return;
-  ram[ObjState + x] = 0x50;
+  if ($br('Z_01:3810', ram[ObjMovingLimit + x] !== 0)) return;
+  ram[(ObjState + x) & 0xff] = 0x50;
 }
 
 /**
@@ -155,12 +168,12 @@ export function GetOneDirectionAndDistanceToTarget(a, y) {
   // GetOneDirectionAndDistanceToTarget (Z_01)
   ram[0x01] = a;
   ram[0x02] = y;
-  if (y < ram[0x01]) {
+  if (!$br('Z_01:3837', y >= ram[0x01])) {
     ram[0x02] = a;
     ram[0x01] = y;
     ram[0x0a] >>= 1;
   }
   const d = (ram[0x02] - ram[0x01]) & 0xff;
-  if (d < 0x09) ram[0x00]++;
+  if (!$br('Z_01:3848', d >= 0x09)) ram[0x00]++;
   return d;
 }

@@ -37,7 +37,11 @@ src/core/              (Arquitecto) infraestructura, sin lógica de juego
   ppu.js               2C02: CHR-RAM, nametables, paleta, OAM, registros, render por puntos, sprite 0
   mapper.js            MMC1: registros serie, mirroring, banco PRG (para bus.read) y CHR
   input.js             teclado/gamepad -> byte de botones; protocolo serie $4016/$4017
-  loop.js              bucle a 60.0988 Hz con acumulador; runFrame()
+  loop.js              bucle a 60.0988 Hz con acumulador; runFrame() (frame lógico), runVideoFrame(), runReset()
+  timing.js            rastreador de ciclos ($br, $pxa, $px, pollStatus; ver §3.1)
+  cfg.js, cfg.gen.js   grafo de instrucciones del asm (GENERADO por scripts/gen-cfg.mjs; opcodes de la ROM)
+  apu-timing.js        calendario de lecturas del DMC (robos de ciclo) como jsnes / hardware
+  opcodes.js           tabla de opcodes oficiales del 6502
   machine.js           ensambla ROM+MMC1+PPU+input sobre el bus
   savestore.js         SRAM <-> localStorage; romstore.js: ROM en IndexedDB
 src/audio/             (APU) APU emulada + AudioWorklet
@@ -66,63 +70,78 @@ src/game/
 Un módulo = un grupo coherente de rutinas (≤ ~400 líneas). El banco del asm sólo importa para leer datos;
 el código JS de cualquier banco puede importar cualquier otro módulo.
 
-## 3. Cómo encajan NMI y frame
+## 3. Cómo encajan NMI y frame (y la temporización a nivel de ciclo)
 
 Zelda hace **todo** dentro de la NMI: `RunGame` habilita la NMI y entra en `LoopForever: JMP LoopForever`.
-Por tanto un frame del port = una ejecución de `IsrNmi`:
+Un frame lógico del port = una ejecución de `IsrNmi` hasta su `RTI` (definición del oráculo, `docs/ORACLE.md`).
 
-```js
-// src/core/loop.js
-export function runFrame(machine, game) {
-  machine.ppu.beginFrame();   // scanline 241, flag de vblank activo
-  game.nmi();                 // IsrNmi portada: vuelca buffers, espera sprite 0, lógica del modo
-  machine.ppu.endFrame();     // renderiza lo que queda del frame
-}
-```
+- `game.reset()` = `IsrReset` + `RunGame` hasta `LoopForever`. Esa RAM es el "frame 0" del oráculo.
+- `src/headless.js` (`createGame({rom, sram, powerOnFill, timing, strict, inputFor})`) monta la misma máquina
+  que la página; `stepFrame(p1, p2)` ejecuta un frame lógico y deja en `framebuffer` la imagen que se ve
+  después de ese `RTI`. RAM/SRAM/bus son singletons: un juego por proceso.
+- **Audio**: `$4000-$4017` van por `write()` → `bus.apuWrite`; `audio.endFrame()` una vez por frame de vídeo.
 
-- `game.reset()` = `IsrReset` + `RunGame` hasta `LoopForever` (sin ninguna NMI). Esa RAM es el "frame 0"
-  del oráculo.
-- El oráculo define frame igual (snapshot en el `RTI` de `IsrNmi`), por eso las trazas son comparables.
-- `src/headless.js` (`createGame({rom, sram, powerOnFill})`) monta la misma máquina que la página, llena la RAM
-  con `powerOnFill`, llama a `reset()` y en cada `stepFrame(p1, p2)` fija los mandos (`input.setOverride`) y
-  ejecuta `runFrame`. `framebuffer` es `ppu.indexBuffer`. RAM/SRAM/bus son singletons: un juego por proceso.
-- **Audio**: las escrituras `$4000-$4017` del port van por `write()` → `bus.apuWrite` → `NesAudio.writeRegister`
-  (main.js lo conecta tras el botón «Activar audio»); el bucle llama a `audio.endFrame()` tras cada `runFrame`.
-  En headless `bus.apuWrite` es `null` y se descartan.
+### 3.1 Rastreador de ciclos (`src/core/timing.js`, diseño en `docs/TIMING.md`)
 
-### El HUD y el sprite 0
+El port lleva la cuenta **exacta** de ciclos del 6502 original: el rastreador mantiene una posición en el
+programa original (grafo de instrucciones de `src/core/cfg.js`, generado del asm por `scripts/gen-cfg.mjs` →
+`cfg.gen.js`, opcodes leídos de la ROM al cargar) y el ciclo absoluto desde el encendido. Entre dos *migas*
+del JS el asm no tiene decisiones, así que el rastreador lo recorre solo (sigue `JSR`/`RTS`/`JMP` con una pila
+de retornos propia, `SwitchBank*` es opaco). Cada acceso de E/S cae en su ciclo; la PPU (`ppu.syncTo`) dibuja
+hasta ese punto exacto, cruza fronteras de frame sola (frames de lag) y entrega cada imagen (`onFrame`).
 
-`IsrNmi` escribe `$2000/$2001`, hace OAM DMA, pone el scroll a 0 y vuelca el buffer de tiles; luego:
+Modos (`createGame({timing})`, `?timing=` en la página, env `ZELDA_TIMING`):
+`jsnes` (por defecto: reglas del oráculo de CI: frame de 89 342 puntos, render de fondo por línea como jsnes,
+PPUMASK desde la línea siguiente, hit del sprite 0 como jsnes, DMC/sample timer de jsnes), `hardware` (PPU por
+puntos, punto impar; DMC aproximado) y `off` (modelo antiguo "tiempo cero"). `strict: true` (o
+`ZELDA_TIMING_STRICT=1`) hace que una miga mal puesta o que falte lance `TimingError` con la línea del asm;
+sin estricto, el rastreador deja de contar hasta la NMI siguiente y esa NMI sigue con el modelo antiguo (RAM
+idéntica siempre: la temporización solo afecta a la imagen).
 
-```asm
-@WaitVBlankEnd:            ; espera a que el flag de sprite 0 se borre (fin de vblank)
-    LDA PpuStatus_2002
-    AND #$40
-    BNE @WaitVBlankEnd
-    ...
-    LDA IsSprite0CheckActive
-    BEQ @CheckScroll
-    LDA #$05
-    JSR SwitchBank
-    JSR WaitAndScrollToSplitBottom   ; Z_05: espera el hit, quema ciclos y escribe scroll/PPUADDR
-```
+**Migas automáticas** (no hay que escribir nada):
 
-La PPU es "catch-up": tiene un reloj en puntos. El código portado corre instantáneo; los accesos a registros
-se aplican en el punto actual del reloj, y **las esperas activas del original se traducen en avances de
-reloj**:
+| Qué | Dónde |
+|---|---|
+| E/S `$2000-$401F` y escrituras al mapper (`$8000+`) | `bus.read/write` |
+| `TableJump` | `tableJump()` de `core/asm.js` |
+| `SwitchBank` | `switchBank()` de `core/asm.js` (opaco; el banco se aplica al pasar el `JSR SwitchBank`) |
+| entrada/salida de rutinas, `JMP`, caídas | el propio asm (no hace falta `enter/leave`) |
+| NMI, bucle ocioso, OAM DMA 513/514, robos del DMC, NMI anidada | `timing.stepFrame` (bucle) |
+
+**Migas manuales** (`import { $br, $pxa, $px, pollStatus } from '../core/timing.js'`):
 
 | asm | JS |
 |---|---|
-| bucle `LDA $2002 / AND #$40 / BNE` | `ppu.waitSprite0Clear()` |
-| bucle `LDA $2002 / AND #$40 / BEQ` | `ppu.waitSprite0Hit()` (devuelve `false` si no hay hit este frame) |
-| bucles de retardo (`DEX/BPL`, `NOP`s) | `ppu.cpuCycles(n)` con los ciclos exactos del bucle |
-| `STA $4014` | `write(0x4014, 2)` (suma 513 ciclos solo) |
+| un salto condicional `Bxx` en la línea L de `Z_0b.asm` | envolver la condición: `if ($br('Z_0b:L', tomado)) ...` — `$br` devuelve `tomado`; la condición del JS debe ser "el salto se toma" (usar `!$br(...)` para el caso contrario) |
+| bucle `for` / `while` | en la forma del asm: el cuerpo y luego `if (!$br('Z_0b:L', sigue)) break;` (una miga por vuelta) |
+| lectura indexada que puede cruzar página (`LDA Tabla,Y`, `LDA ($00),Y`) | antes de leer: `$pxa('Z_0b:L', base, índice)` (base = dirección de la tabla o del puntero) o `$px('Z_0b:L', cruza)` |
+| bucle `LDA $2002 / AND #m / Bxx` hacia atrás | `pollStatus(bus.ppu, m, hastaQueEsté)` |
+| un helper JS que sirve a varios saltos del asm | pasarle la referencia: `bitIndex(a, 'Z_00:442')` |
 
-Los ciclos de los retardos se cuentan del asm (p. ej. el doble bucle `LDY #$03 / LDX #$30 / DEX / BPL / DEY / BPL`
-de `WaitAndScrollToSplitBottom`, más sus `NOP`s). Calcúlalos con cuidado (saltos tomados +1 ciclo, cruce de página +1) y deja la cuenta en un comentario. Tras el retardo, las escrituras a
-`$2005/$2006/$2000` cambian el scroll en mitad del frame exactamente como en hardware (registros loopy v/t/x/w).
+Ejemplo (IsrNmi, `Z_07`):
 
-Fuera de la NMI no se avanza el reloj: el resto de la lógica no depende del raster.
+```js
+if (!$br('Z_07:391', ram[SwitchNameTablesReq] === 0)) a ^= 0x02;      // LDX ... / BEQ :+ / EOR #$02
+for (let x = 0x18, y = 0x0d; ;) { cpu.rorMem(x); x++; y--; if (!$br('Z_07:531', y !== 0)) break; } // DEY / BNE
+pollStatus(bus.ppu, 0x40, false);                                       // @WaitVBlankEnd
+```
+
+Las referencias son literales `'Z_0b:línea'` (el desensamblado no cambia). No hace falta seguir el orden de
+rutinas del asm al pie de la letra, pero sí el **orden de las decisiones y accesos**: cada miga se comprueba
+contra el asm. Coste: el rastreador cuesta menos que lo que ahorra el render por línea (`node
+tools/timing/bench.mjs`: ~0,6 ms por frame en `jsnes` frente a ~1,1 ms del modelo antiguo).
+
+Herramientas para anotar: `node tools/timing/coverage.mjs P05` (saltos sin `$br`, lecturas sin `$pxa`,
+anotaciones erróneas o sobrantes, por rutina), `node tools/timing/cycle-diff.mjs <movie> [--resync]` (primer
+desfase de ciclo con la rutina y la línea del asm; `--resync` da la lista de trabajo por NMI) y
+`node tools/oracle/battery.mjs movies` (píxeles distintos, objetivo 0). Ver `docs/TIMING.md` §10.
+
+### El HUD y el sprite 0
+
+`WaitAndScrollToSplitBottom` (`src/game/ppu/sprite0.js`) es `pollStatus` + los bucles de retardo del asm con
+`$br`: las escrituras del corte caen en el ciclo del original. Sin rastreador (`timing: 'off'`) las escrituras
+ocurren justo tras el hit (los contadores a mano se quitaron; `ppu.waitStatus/cpuCycles` quedan solo como
+respaldo del modo antiguo).
 
 ## 4. Acceso a memoria
 

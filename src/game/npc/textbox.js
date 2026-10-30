@@ -3,22 +3,27 @@
 
 import { ram, word } from '../../core/ram.js';
 import { bus, read } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
 import {
   ObjTimer, ObjState, DynTileBuf, PersonTextPtr, PersonTextSelector, PersonTextIndex, Tune0Request,
   Tune1Request, TileBufSelector,
 } from '../../core/vars.js';
 import { Link_EndMoveAndDraw_Bank1 } from '../link/anim.js';
 import { UnhaltLink } from './cave.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** UpdatePersonState_Textbox (Z_01): every 6 frames transfer the next character of the person text. */
 export function UpdatePersonState_Textbox() {
   // UpdatePersonState_Textbox (Z_01)
   Link_EndMoveAndDraw_Bank1();
-  if (ram[ObjTimer + 1] !== 0) return;
+  if ($br('Z_01:581', ram[ObjTimer + 1] !== 0)) return;
   ram[ObjTimer + 1] = 0x06;
   const template = table(bus.rom, 'TextboxCharTransferRecTemplate');
-  for (let y = 0x04; y >= 0; y--) ram[DynTileBuf + y] = template.byte(y);
+  for (let y = 0x04; ; y--) {
+    $pxa('Z_01:592', template.addr, y);
+    ram[DynTileBuf + y] = template.byte(y);
+    if (!$br('Z_01:595', y - 1 >= 0)) break;
+  }
   const addrs = table(bus.rom, 'PersonTextAddrs');
   let a;
   let y;
@@ -32,21 +37,24 @@ export function UpdatePersonState_Textbox() {
     ram[0x01] = addrs.byte(y);
     y = ram[PersonTextIndex];
     ram[PersonTextIndex]++;
+    $pxa('Z_01:623', ram[0x00], y);
     a = read((word(0x00) + y) & 0xffff) & 0x3f; // LDA ($00), Y (bank 1)
-  } while (a === 0x25);
+  } while ($br('Z_01:630', a === 0x25));
   ram[DynTileBuf + 3] = a;
   ram[Tune0Request] = 0x10; // "heart taken/character"
+  $pxa('Z_01:640', ram[0x00], y);
   a = read((word(0x00) + y) & 0xffff) & 0xc0;
-  if (a === 0) return;
+  if ($br('Z_01:642', a === 0)) return;
   // $80: next line 2, $40: line 3, $C0: end of the text (back to line 1).
   y = 0x02;
-  if (a !== 0xc0) {
+  if (!$br('Z_01:650', a === 0xc0)) {
     y--;
-    if (a !== 0x40) y--;
+    if (!$br('Z_01:653', a === 0x40)) y--;
   }
   // @ChangeLine
+  $pxa('Z_01:664', label('TextboxLineAddrsLo').addr, y);
   ram[PersonTextPtr] = table(bus.rom, 'TextboxLineAddrsLo').byte(y);
-  if (y !== 0x02) return;
+  if ($br('Z_01:671', y !== 0x02)) return;
   ram[ObjState + 1]++;
   UnhaltLink();
 }

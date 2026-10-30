@@ -6,6 +6,7 @@
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjTimer, Flyer_ObjFlyingState, Flyer_ObjSpeed, Random, FlyingMaxSpeedFrac, Flyer_ObjSpeedFrac, ObjDir,
   ObjX, ObjY, Flyer_ObjOffsetX, Flyer_ObjOffsetY, Flyer_ObjDistTraveled, ObjType, Moldorm_ObjBounceDir,
@@ -13,8 +14,12 @@ import {
 } from '../../core/vars.js';
 import { BoundDirectionHorizontally, BoundDirectionVertically } from '../movement/bounds.js';
 
-/** LDA Directions8, Y */
-const directions8 = (y) => table(bus.rom, 'Directions8').byte(y);
+/** LDA Directions8, Y (ref = the asm line of the indexed read, for its page-cross hint) */
+const directions8 = (y, ref) => {
+  const t = table(bus.rom, 'Directions8');
+  $pxa(ref, t.addr, y);
+  return t.byte(y);
+};
 
 /** Flyer_DoNothing (Z_04). */
 export function Flyer_DoNothing(x) {
@@ -24,7 +29,7 @@ export function Flyer_DoNothing(x) {
 /** Flyer_Delay (Z_04). X = flyer: when its timer expires, go to flying state 0. */
 export function Flyer_Delay(x) {
   // Flyer_Delay (Z_04)
-  if (ram[ObjTimer + x] !== 0) return;
+  if ($br('Z_04:11518', ram[ObjTimer + x] !== 0)) return;
   ram[Flyer_ObjFlyingState + x] = 0x00;
 }
 
@@ -44,8 +49,9 @@ export function Flyer_SpeedUp(x) {
 
 /** Flyer_SpeedUp@: (shared by Flyer_SlowDown). */
 function flyerCheckSpeed(x) {
+  $pxa('Z_04:11535', Flyer_ObjSpeed, x);
   const a = ram[Flyer_ObjSpeed + x] & 0xe0;
-  if (a !== 0) return Flyer_CompareMaxSpeed(a, x);
+  if ($br('Z_04:11537', a !== 0)) return Flyer_CompareMaxSpeed(a, x);
   ram[ObjTimer + x] = (ram[Random + x] & 0x3f) | 0x40;
   return Flyer_SetFlyingState(0x05, x); // falls through
 }
@@ -59,7 +65,7 @@ export function Flyer_SetFlyingState(a, x) {
 
 /** Flyer_CompareMaxSpeed (Z_04, part of Flyer_SpeedUp). A = speed & $E0. */
 function Flyer_CompareMaxSpeed(a, x) {
-  if (a < ram[FlyingMaxSpeedFrac]) return a;
+  if ($br('Z_04:11556', a < ram[FlyingMaxSpeedFrac])) return a;
   return Flyer_SetFlyingState(0x01, x);
 }
 
@@ -70,30 +76,32 @@ function Flyer_CompareMaxSpeed(a, x) {
  */
 export function MoveFlyer(x) {
   // MoveFlyer (Z_04)
+  $pxa('Z_04:11562', Flyer_ObjSpeed, x);
+  $pxa('Z_04:11565', Flyer_ObjSpeedFrac, x);
   const sum = (ram[Flyer_ObjSpeed + x] & 0xe0) + ram[Flyer_ObjSpeedFrac + x];
   ram[Flyer_ObjSpeedFrac + x] = sum;
-  if (sum < 0x100) return; // @Exit
+  if ($br('Z_04:11567', sum < 0x100)) return; // @Exit
   ram[0x02] = 0x01;
   const d = ram[ObjDir + x];
-  if (d & ram[0x02]) {
+  if (!$br('Z_04:11578', (d & ram[0x02]) === 0)) {
     ram[ObjX + x]++;
     ram[Flyer_ObjOffsetX + x]++;
   }
   // @Left
   ram[0x02] <<= 1;
-  if (d & ram[0x02]) {
+  if (!$br('Z_04:11586', (d & ram[0x02]) === 0)) {
     ram[ObjX + x]--;
     ram[Flyer_ObjOffsetX + x]--;
   }
   // @Down
   ram[0x02] <<= 1;
-  if (d & ram[0x02]) {
+  if (!$br('Z_04:11594', (d & ram[0x02]) === 0)) {
     ram[ObjY + x]++;
     ram[Flyer_ObjOffsetY + x]++;
   }
   // @Up
   ram[0x02] <<= 1;
-  if (d & ram[0x02]) {
+  if (!$br('Z_04:11602', (d & ram[0x02]) === 0)) {
     ram[ObjY + x]--;
     ram[Flyer_ObjOffsetY + x]--;
   }
@@ -110,8 +118,9 @@ export function BoundFlyer(x) {
   // BoundFlyer (Z_04)
   ram[0x0f] = ram[ObjDir + x];
   BoundDirectionHorizontally(x);
-  if (ram[ObjType + x] !== 0x20) BoundDirectionVertically(x);
-  if (ram[0x0f] !== 0) return ram[0x0f]; // L132F8_Exit
+  $pxa('Z_04:11625', ObjType, x);
+  if (!$br('Z_04:11627', ram[ObjType + x] === 0x20)) BoundDirectionVertically(x);
+  if ($br('Z_04:11632', ram[0x0f] !== 0)) return ram[0x0f]; // L132F8_Exit
   return ReverseObjDir8(x); // falls through
 }
 
@@ -123,14 +132,15 @@ export function BoundFlyer(x) {
 export function ReverseObjDir8(x) {
   // ReverseObjDir8 (Z_04)
   const y = (GetObjDir8Index(x) + 0x04) & 0x07;
-  if (ram[ObjType + x] === 0x41) {
+  $pxa('Z_04:11645', ObjType, x);
+  if ($br('Z_04:11647', ram[ObjType + x] === 0x41)) {
     // DeferBounce
-    if (x !== 0x05 && x !== 0x0a) return 0x41; // L13307_Exit
-    const a = directions8(y);
+    if (!$br('Z_04:11660', x === 0x05) && $br('Z_04:11662', x !== 0x0a)) return 0x41; // L13307_Exit
+    const a = directions8(y, 'Z_04:11664');
     ram[Moldorm_ObjBounceDir + x] = a;
     return a;
   }
-  const a = directions8(y);
+  const a = directions8(y, 'Z_04:11650');
   ram[ObjDir + x] = a;
   return a; // L132F8_Exit
 }
@@ -141,9 +151,9 @@ export function ReverseObjDir8(x) {
  */
 export function Flyer_Chase(x) {
   // Flyer_Chase (Z_04)
-  if (ram[ObjTimer + x] !== 0) return; // L13307_Exit
+  if ($br('Z_04:11677', ram[ObjTimer + x] !== 0)) return; // L13307_Exit
   ram[Flyer_ObjTurns + x]--;
-  if (ram[Flyer_ObjTurns + x] === 0) return SetFlyingState1(x); // falls through
+  if (!$br('Z_04:11682', ram[Flyer_ObjTurns + x] !== 0)) return SetFlyingState1(x); // falls through
   // SetDelayAndTurn
   ram[ObjTimer + x] = 0x10;
   return TurnTowardsPlayer8(x); // falls through
@@ -164,39 +174,44 @@ export function TurnTowardsPlayer8(x) {
   let y = 0x00;
   ram[0x00] = y;
   y = 0x01;
-  if (ram[ChaseTargetX] !== ram[ObjX + x]) {
-    if (ram[ChaseTargetX] < ram[ObjX + x]) y++;
+  if (!$br('Z_04:11706', ram[ChaseTargetX] === ram[ObjX + x])) {
+    if (!$br('Z_04:11707', ram[ChaseTargetX] >= ram[ObjX + x])) y++;
     ram[0x00] = y;
   }
   // @CalcVertical
   y = 0x01;
-  if (ram[ChaseTargetY] !== ram[ObjY + x]) {
-    if (ram[ChaseTargetY] < ram[ObjY + x]) y++;
+  if (!$br('Z_04:11724', ram[ChaseTargetY] === ram[ObjY + x])) {
+    if (!$br('Z_04:11725', ram[ChaseTargetY] >= ram[ObjY + x])) y++;
     ram[0x00] = ((y << 2) | ram[0x00]) & 0xff;
   }
   // @SkipVertical
   y = GetObjDir8Index(x);
   ram[0x01] = 0x03;
   y = (y + 1) & 0xff; // turn right
-  do {
+  for (;;) {
     // @LoopLeft
     y &= 0x07;
-    if (directions8(y) === ram[0x00]) return; // L1336F_Exit
+    if ($br('Z_04:11755', directions8(y, 'Z_04:11753') === ram[0x00])) return; // L1336F_Exit
     y = (y - 1) & 0xff; // turn left
     ram[0x01]--;
-  } while (ram[0x01] !== 0);
+    if (!$br('Z_04:11758', ram[0x01] !== 0)) break;
+  }
   ram[0x01] = 0x03;
   y = (y + 1) & 0xff;
-  do {
+  for (;;) {
     // LoopRight
     y &= 0x07;
-    const a = directions8(y);
+    const a = directions8(y, 'Z_04:11775');
     // TestDir: allow the turn if (test direction | target direction) < 7
-    if ((a & ram[0x00]) !== 0 && (a | ram[0x00]) < 0x07) return SetDir8ForIndex(x, y);
+    if ($br('Z_04:11777', (a & ram[0x00]) !== 0) && !$br('Z_04:11806', (a | ram[0x00]) >= 0x07)) {
+      $br('Z_04:11807', true); // BCC SetDir8ForIndex
+      return SetDir8ForIndex(x, y);
+    }
     // NextLoopRight
     y = (y + 1) & 0xff;
     ram[0x01]--;
-  } while (ram[0x01] !== 0);
+    if (!$br('Z_04:11782', ram[0x01] !== 0)) break;
+  }
   y = (y - 1) & 0xff;
   return SetDir8ForIndex(x, y); // falls through
 }
@@ -204,7 +219,7 @@ export function TurnTowardsPlayer8(x) {
 /** SetDir8ForIndex (Z_04). X = object, Y = 8-way index. @returns A = new direction */
 export function SetDir8ForIndex(x, y) {
   // SetDir8ForIndex (Z_04)
-  const a = directions8(y);
+  const a = directions8(y, 'Z_04:11790');
   ram[ObjDir + x] = a;
   return a;
 }
@@ -215,9 +230,9 @@ export function SetDir8ForIndex(x, y) {
  */
 export function Flyer_Wander(x) {
   // Flyer_Wander (Z_04)
-  if (ram[ObjTimer + x] !== 0) return; // L133AC_Exit
+  if ($br('Z_04:11816', ram[ObjTimer + x] !== 0)) return; // L133AC_Exit
   ram[Flyer_ObjTurns + x]--;
-  if (ram[Flyer_ObjTurns + x] === 0) return SetFlyingState1(x);
+  if (!$br('Z_04:11821', ram[Flyer_ObjTurns + x] !== 0)) return SetFlyingState1(x);
   ram[ObjTimer + x] = 0x10;
   return TurnRandomlyDir8(x); // falls through
 }
@@ -227,9 +242,9 @@ export function TurnRandomlyDir8(x) {
   // TurnRandomlyDir8 (Z_04)
   let y = GetObjDir8Index(x);
   const a = ram[Random + 1 + x];
-  if (a < 0xa0) {
+  if (!$br('Z_04:11836', a >= 0xa0)) {
     y = (y + 1) & 0xff;
-    if (a < 0x50) y = (y - 2) & 0xff;
+    if (!$br('Z_04:11839', a >= 0x50)) y = (y - 2) & 0xff;
   }
   // @SetDir
   return SetDir8ForIndex(x, y & 0x07);
@@ -239,8 +254,10 @@ export function TurnRandomlyDir8(x) {
 export function GetObjDir8Index(x) {
   // GetObjDir8Index (Z_04)
   let y = 0x07;
-  for (; y >= 0; y--) {
-    if (ram[ObjDir + x] === directions8(y)) return y; // L133AC_Exit
+  for (;;) {
+    if ($br('Z_04:11857', ram[ObjDir + x] === directions8(y, 'Z_04:11856'))) return y; // L133AC_Exit
+    y = (y - 1) & 0xff;
+    if (!$br('Z_04:11859', !(y & 0x80))) break;
   }
   return 0; // unverified code 133AB: INY from $FF
 }

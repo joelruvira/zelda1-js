@@ -1,6 +1,7 @@
 // P19 — enemies/vire (Z_04): vires hop sideways and split into two red keeses when hurt.
 // X = object slot in every routine.
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
@@ -23,19 +24,22 @@ import { Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor, DrawObjectMirro
 export function UpdateVire(x) {
   // UpdateVire (Z_04)
   UpdateVireState(x);
-  if (ram[ObjState + x] < 0x02) {
+  if (!$br('Z_04:6921', ram[ObjState + x] >= 0x02)) {
     CheckVireCollisions(x);
     return DrawVire(x);
   }
   // @SplitUp
   ram[RoomObjCount]++;
   DestroyMonster(x);
-  for (let y = 0x01; !(y & 0x80); y = (y - 1) & 0xff) {
+  for (let y = 0x01; ;) {
     // @LoopMakeKeese (Y saved with PHA / PLA)
     const f = FindEmptyMonsterSlot();
-    if (f.y === 0) continue; // BEQ @NextLoopMakeKeese
-    ram[0x00] = 0x1c;
-    Shoot();
+    if (!$br('Z_04:6939', f.y === 0)) { // BEQ @NextLoopMakeKeese
+      ram[0x00] = 0x1c;
+      Shoot();
+    }
+    y = (y - 1) & 0xff;
+    if (!$br('Z_04:6948', !(y & 0x80))) break;
   }
 }
 
@@ -52,19 +56,23 @@ export function UpdateVireState(x) {
 export function UpdateVireState0(x) {
   // UpdateVireState0 (Z_04)
   UpdateCommonWanderer(0x80, x);
-  if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return; // @Exit
-  if ((ram[ObjDir + x] & 0x03) === 0) return; // @Exit
+  if ($br('Z_04:6970', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return; // @Exit
+  if ($br('Z_04:6975', (ram[ObjDir + x] & 0x03) === 0)) return; // @Exit
+  $pxa('Z_04:6979', ObjGridOffset, x);
   const y = Abs(ram[ObjGridOffset + x]);
+  $pxa('Z_04:6987', table(bus.rom, 'VireJumpOffsets').addr, y);
   ram[ObjY + x] = ram[ObjY + x] + table(bus.rom, 'VireJumpOffsets').byte(y);
 }
 
 /** CheckVireCollisions (Z_04). X = vire in state 0: collide; when hurt (not killed), go to state 1. */
 export function CheckVireCollisions(x) {
   // CheckVireCollisions (Z_04)
-  if (ram[ObjState + x] !== 0) return; // @Exit
+  if ($br('Z_04:6997', ram[ObjState + x] !== 0)) return; // @Exit
   CheckMonsterCollisions(x);
-  if (ram[ObjMetastate + x] !== 0) return;
-  if (ram[ObjInvincibilityTimer + x] === 0) return;
+  $pxa('Z_04:7001', ObjMetastate, x);
+  if ($br('Z_04:7002', ram[ObjMetastate + x] !== 0)) return;
+  $pxa('Z_04:7006', ObjInvincibilityTimer, x);
+  if ($br('Z_04:7007', ram[ObjInvincibilityTimer + x] === 0)) return;
   ram[ObjState + x]++;
 }
 
@@ -72,6 +80,7 @@ export function CheckVireCollisions(x) {
 export function DrawVire(x) {
   // DrawVire (Z_04)
   Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x0a, x);
+  $pxa('Z_04:7024', ObjAnimFrame, x);
   const a = ((ram[ObjDir + x] & 0x08) >> 2) + ram[ObjAnimFrame + x];
   return DrawObjectMirrored(a & 0xff, x);
 }

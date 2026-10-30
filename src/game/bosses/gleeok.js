@@ -31,6 +31,7 @@ import { CheckMonsterCollisions } from '../combat/collisions.js';
 import { ResetObjMetastate } from '../objects/slots.js';
 import { ResetShoveInfo, SetShoveInfoWith0 } from '../movement/shove.js';
 import { Abs, Negate } from '../movement/math.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 const tbl = (name) => table(bus.rom, name);
 
@@ -45,12 +46,13 @@ export function InitGleeok() {
   ram[SampleRequest] = 0x10;
   const ys = tbl('GleeokSegmentYs');
   let x;
-  for (x = 5; x >= 0; x--) {
+  for (x = 5; ;) {
     ram[Gleeok_NeckXs0 + x] = 0x7c;
     ram[Gleeok_NeckXs1 + x] = 0x7c;
     ram[Gleeok_NeckXs2 + x] = 0x7c;
     ram[Gleeok_NeckXs3 + x] = 0x7c;
     ram[ObjX + 1 + x] = 0x7c;
+    $pxa('Z_04:7657', ys.addr, x);
     const a = ys.byte(x);
     ram[Gleeok_NeckYs0 + x] = a;
     ram[Gleeok_NeckYs1 + x] = a;
@@ -61,6 +63,8 @@ export function InitGleeok() {
     ram[ObjMetastate + 1 + x] = 0x00;
     ram[ObjUninitialized + 2 + x] = 0x00; // +2 as in the original
     ram[ObjInvincibilityMask + 1 + x] = 0xfe;
+    x--;
+    if (!$br('Z_04:7686', x >= 0)) break;
   }
   x = 0xff;
   ram[Gleook_HeadInfo0 + GLEEOK_SPEEDX] = x;
@@ -102,10 +106,13 @@ export function UpdateGleeokHead(x) {
   // UpdateGleeokHead (Z_04)
   ControlGleeokHeadFlight(x);
   MoveFlyer(x);
-  if ((ram[Flyer_ObjDistTraveled + x] & 0x01) === 0 && ram[Random + 1 + x] < 0x20 && ram[ObjType + 11] === 0) {
+  $pxa('Z_04:8513', Flyer_ObjDistTraveled, x);
+  if (!$br('Z_04:8515', (ram[Flyer_ObjDistTraveled + x] & 0x01) !== 0) && !$br('Z_04:8518', ram[Random + 1 + x] >= 0x20)
+    && !$br('Z_04:8520', ram[ObjType + 11] !== 0)) {
     ShootFireball(0x56, x);
   }
   Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x01, x);
+  $pxa('Z_04:8526', ObjAnimFrame, x);
   DrawObjectMirrored(ram[ObjAnimFrame + x], x);
   CheckMonsterCollisions(x);
   ResetObjMetastate(x);
@@ -116,6 +123,7 @@ export function UpdateGleeokHead(x) {
 /** ControlGleeokHeadFlight (Z_04). X = flying head: dispatch on the flying state. */
 export function ControlGleeokHeadFlight(x) {
   // ControlGleeokHeadFlight (Z_04)
+  $pxa('Z_04:8538', Flyer_ObjFlyingState, x);
   return tableJump(label('ControlGleeokHeadFlight_JumpTable').addr, ram[Flyer_ObjFlyingState + x], [
     () => Flyer_SpeedUp(x), () => Flyer_GleeokHeadDecideState(x), () => Flyer_Chase(x), () => Flyer_Wander(x),
   ]);
@@ -125,7 +133,7 @@ export function ControlGleeokHeadFlight(x) {
 export function Flyer_GleeokHeadDecideState(x) {
   // Flyer_GleeokHeadDecideState (Z_04)
   let y = 0x02;
-  if (ram[Random + 1 + x] >= 0xd0) y++;
+  if (!$br('Z_04:8556', ram[Random + 1 + x] < 0xd0)) y++;
   return Flyer_SetStateAndTurns(x, y);
 }
 
@@ -142,35 +150,47 @@ export function UpdateGleeok() {
   ram[GleeokCurNeck] = ram[ObjType + 1] - 0x42;
   do {
     // @LoopNeck
-    const m = tbl('LevelMasks').byte(ram[GleeokCurNeck]);
-    if ((m & ram[GleeokDeadNeckMask]) === 0) {
+    const lm = tbl('LevelMasks');
+    $pxa('Z_04:8595', lm.addr, ram[GleeokCurNeck]);
+    const m = lm.byte(ram[GleeokCurNeck]);
+    if ($br('Z_04:8597', (m & ram[GleeokDeadNeckMask]) === 0)) {
       let { x, y } = Gleeok_FetchNeckAddrs();
       // @LoadNeckBytes
-      for (; y >= 0; y--) {
+      for (; ;) {
+        $pxa('Z_04:8609', word(0x00), y);
         ram[ObjX + 1 + y] = read((word(0x00) + y) & 0xffff);
+        $pxa('Z_04:8611', word(0x02), y);
         ram[ObjY + 1 + y] = read((word(0x02) + y) & 0xffff);
+        $pxa('Z_04:8613', word(0x04), y);
         ram[Gleeok_ObjHeadInfo + y] = read((word(0x04) + y) & 0xffff);
+        y--;
+        if (!$br('Z_04:8616', y >= 0)) break;
       }
       ram[0x00] = ram[FrameCounter] & 0x03;
-      if (x === ram[0x00]) {
+      if (!$br('Z_04:8623', x !== ram[0x00])) {
         Gleeok_MoveNeck();
         Gleeok_MoveHead();
         x = 0x05; // shoot from the head
-        if (ram[Random + x] < 0x20 && ram[ObjType + 11] === 0) ShootFireball(0x56, x);
+        if (!$br('Z_04:8635', ram[Random + x] >= 0x20) && !$br('Z_04:8637', ram[ObjType + 11] !== 0)) ShootFireball(0x56, x);
       }
       // @DrawAndCheckCollisions
       Gleeok_DrawHeadAndCheckCollisions();
       ({ y } = Gleeok_FetchNeckAddrs());
       // @SaveNeckBytes
-      for (; y >= 0; y--) {
+      for (; ;) {
+        $pxa('Z_04:8649', ObjX + 1, y);
         write((word(0x00) + y) & 0xffff, ram[ObjX + 1 + y]);
+        $pxa('Z_04:8651', ObjY + 1, y);
         write((word(0x02) + y) & 0xffff, ram[ObjY + 1 + y]);
+        $pxa('Z_04:8653', Gleeok_ObjHeadInfo, y);
         write((word(0x04) + y) & 0xffff, ram[Gleeok_ObjHeadInfo + y]);
+        y--;
+        if (!$br('Z_04:8656', y >= 0)) break;
       }
     }
     // @NextLoopNeck
     ram[GleeokCurNeck]--;
-  } while (!(ram[GleeokCurNeck] & 0x80));
+  } while ($br('Z_04:8662', !(ram[GleeokCurNeck] & 0x80)));
 }
 
 /**
@@ -180,12 +200,13 @@ export function UpdateGleeok() {
 export function Gleeok_FetchNeckAddrs() {
   // Gleeok_FetchNeckAddrs (Z_04)
   const x = ram[GleeokCurNeck];
-  ram[0x00] = tbl('GleeokNeckXAddrsLo').byte(x);
-  ram[0x01] = tbl('GleeokNeckXAddrsHi').byte(x);
-  ram[0x02] = tbl('GleeokNeckYAddrsLo').byte(x);
-  ram[0x03] = tbl('GleeokNeckYAddrsHi').byte(x);
-  ram[0x04] = tbl('GleeokNeckMiscAddrsLo').byte(x);
-  ram[0x05] = tbl('GleeokNeckMiscAddrsHi').byte(x);
+  const t = (ref, name) => { const tb = tbl(name); $pxa(ref, tb.addr, x); return tb.byte(x); };
+  ram[0x00] = t('Z_04:8674', 'GleeokNeckXAddrsLo');
+  ram[0x01] = t('Z_04:8676', 'GleeokNeckXAddrsHi');
+  ram[0x02] = t('Z_04:8678', 'GleeokNeckYAddrsLo');
+  ram[0x03] = t('Z_04:8680', 'GleeokNeckYAddrsHi');
+  ram[0x04] = t('Z_04:8682', 'GleeokNeckMiscAddrsLo');
+  ram[0x05] = t('Z_04:8684', 'GleeokNeckMiscAddrsHi');
   return { x, y: 0x05 };
 }
 
@@ -201,7 +222,7 @@ export function L_Gleeok_UDiv4(a) {
 export function Gleeok_MoveNeck() {
   // Gleeok_MoveNeck (Z_04)
   let a = (ram[ObjX + 5] - ram[ObjX + 1]) & 0xff;
-  if (!(a & 0x80)) return L_Gleeok_UDiv4(a); // BPL
+  if ($br('Z_04:8701', !(a & 0x80))) return L_Gleeok_UDiv4(a); // BPL
   a = Negate(Negate(a) >> 2);
   return L_Gleeok_StoreRefSegDistance(a); // falls through
 }
@@ -222,45 +243,49 @@ export function L_Gleeok_StoreRefSegDistance(a) {
   Gleeok_CalcSegmentLimits(a, x);
 
   // @KeepSegsNearNeighbors
-  for (x = 0; x !== 4; x++) {
+  for (x = 0; ;) {
     a = Abs((ram[ObjX + 1 + x] - ram[ObjX + 2 + x]) & 0xff);
-    if (a >= ram[GleeokTertiarySegmentLimits]) {
+    if (!$br('Z_04:8754', a < ram[GleeokTertiarySegmentLimits])) {
       a = ram[ObjX + 2 + x];
       let y = (a + 2) & 0xff;
-      if (a >= ram[ObjX + 1 + x]) y = (y - 4) & 0xff;
+      if (!$br('Z_04:8763', a < ram[ObjX + 1 + x])) y = (y - 4) & 0xff;
       ram[ObjX + 2 + x] = y;
     }
     // @CheckDistanceV
     a = Abs((ram[ObjY + 1 + x] - ram[ObjY + 2 + x]) & 0xff);
-    if (a >= ram[GleeokTertiarySegmentLimits + 1]) {
+    if (!$br('Z_04:8782', a < ram[GleeokTertiarySegmentLimits + 1])) {
       a = ram[ObjY + 2 + x];
       let y = (a + 2) & 0xff;
-      if (a >= ram[ObjY + 1 + x]) y = (y - 4) & 0xff;
+      if (!$br('Z_04:8791', a < ram[ObjY + 1 + x])) y = (y - 4) & 0xff;
       ram[ObjY + 2 + x] = y;
     }
+    x++;
+    if (!$br('Z_04:8803', x !== 4)) break;
   }
 
-  for (x = 0; x < 3; x++) Gleeok_StretchNeck(x);
+  for (x = 0; ;) { Gleeok_StretchNeck(x); x++; if (!$br('Z_04:8811', x < 3)) break; }
 
   // @KeepSegsNearRefPoint
-  for (x = 2; x >= 0; x--) {
+  for (x = 2; ;) {
     a = ram[ObjX + 1];
-    for (let y = x; y >= 0; y--) a = (a + ram[GleeokSignedRefSegmentDistance]) & 0xff;
+    for (let y = x; ;) { a = (a + ram[GleeokSignedRefSegmentDistance]) & 0xff; y--; if (!$br('Z_04:8832', y >= 0)) break; }
     let y = (ram[ObjX + 2 + x] + 1) & 0xff;
-    if (a < ram[ObjX + 2 + x]) y = (y - 2) & 0xff;
+    if (!$br('Z_04:8839', a >= ram[ObjX + 2 + x])) y = (y - 2) & 0xff;
     ram[ObjX + 2 + x] = y;
+    x--;
+    if (!$br('Z_04:8847', x >= 0)) break;
   }
 
   // @KeepSegsBetweenNeighbors
-  for (x = 1; x >= 0; x--) {
+  for (x = 1; ;) {
     a = ram[ObjY + 3 + x];
-    if (a < ram[ObjY + 2 + x]) {
-      if (a >= ram[ObjY + 4 + x]) continue;
-      ram[ObjY + 3 + x]++;
-    } else {
-      if (a < ram[ObjY + 4 + x]) continue;
+    if (!$br('Z_04:8856', a >= ram[ObjY + 2 + x])) {
+      if (!$br('Z_04:8858', a >= ram[ObjY + 4 + x])) ram[ObjY + 3 + x]++;
+    } else if (!$br('Z_04:8863', a < ram[ObjY + 2 + x]) && !$br('Z_04:8865', a < ram[ObjY + 4 + x])) {
       ram[ObjY + 3 + x]--;
     }
+    x--;
+    if (!$br('Z_04:8870', x >= 0)) break;
   }
 }
 
@@ -270,13 +295,13 @@ export function L_Gleeok_StoreRefSegDistance(a) {
  */
 export function Gleeok_CalcSegmentLimits(a, x) {
   // Gleeok_CalcSegmentLimits (Z_04)
-  if (a >= 0x04) a = 0x04;
+  if (!$br('Z_04:8881', a < 0x04)) a = 0x04;
   ram[GleeokPrimarySegmentLimits + x] = a;
   a = (a + 0x04) & 0xff;
-  if (a >= 0x08) a = 0x08;
+  if (!$br('Z_04:8890', a < 0x08)) a = 0x08;
   ram[GleeokSecondarySegmentLimits + x] = a;
   a = (a + 0x04) & 0xff;
-  if (a >= 0x0b) a = 0x0b;
+  if (!$br('Z_04:8899', a < 0x0b)) a = 0x0b;
   ram[GleeokTertiarySegmentLimits + x] = a;
   return a;
 }
@@ -289,11 +314,11 @@ export function Gleeok_StretchNeck(x) {
   // Gleeok_StretchNeck (Z_04)
   let y = 0;
   let a = Abs((ram[ObjX + 3 + x] - ram[ObjX + 3 + x]) & 0xff);
-  if (a >= ram[GleeokPrimarySegmentLimits]) y++;
-  if (a >= ram[GleeokSecondarySegmentLimits]) y++; // unverified code 12658
+  if (!$br('Z_04:8924', a < ram[GleeokPrimarySegmentLimits])) y++;
+  if (!$br('Z_04:8930', a < ram[GleeokSecondarySegmentLimits])) y++; // unverified code 12658
   a = Abs((ram[ObjY + 3 + x] - ram[ObjY + 2 + x]) & 0xff);
-  if (a >= ram[GleeokPrimarySegmentLimits + 1]) y += 3;
-  if (a >= ram[GleeokSecondarySegmentLimits + 1]) y += 3;
+  if (!$br('Z_04:8942', a < ram[GleeokPrimarySegmentLimits + 1])) y += 3;
+  if (!$br('Z_04:8950', a < ram[GleeokSecondarySegmentLimits + 1])) y += 3;
   const ex = () => Gleeok_ExpandSegment(x);
   const ig = () => Gleeok_IgnoreSegment();
   const cx = () => Gleeok_ContractSegmentX(x);
@@ -304,10 +329,10 @@ export function Gleeok_StretchNeck(x) {
 /** Gleeok_ExpandSegment (Z_04). X = segment: move 2 pixels away from the next one, H or V at random. */
 export function Gleeok_ExpandSegment(x) {
   // Gleeok_ExpandSegment (Z_04)
-  if (!(ram[Random] & 0x80)) return L_Gleeok_ExpandHorizontally(x);
+  if ($br('Z_04:8972', !(ram[Random] & 0x80))) return L_Gleeok_ExpandHorizontally(x);
   const a = ram[ObjY + 2 + x];
   const y = (a + 2) & 0xff;
-  if (a > ram[ObjY + 3 + x]) return L_Gleeok_SetSegmentY(x, y);
+  if (!$br('Z_04:8980', a === ram[ObjY + 3 + x]) && $br('Z_04:8981', a > ram[ObjY + 3 + x])) return L_Gleeok_SetSegmentY(x, y);
   return L_Gleeok_DecSegmentY(x, y);
 }
 
@@ -332,7 +357,8 @@ export function Gleeok_ContractSegmentY(x) {
   // Gleeok_ContractSegmentY (Z_04)
   const a = ram[ObjY + 2 + x];
   const y = (a + 2) & 0xff;
-  if (a <= ram[ObjY + 3 + x]) return L_Gleeok_SetSegmentY(x, y);
+  if ($br('Z_04:9002', a === ram[ObjY + 3 + x]) || $br('Z_04:9003', a < ram[ObjY + 3 + x])) return L_Gleeok_SetSegmentY(x, y);
+  $br('Z_04:9004', true);
   return L_Gleeok_DecSegmentY(x, y);
 }
 
@@ -340,7 +366,8 @@ export function Gleeok_ContractSegmentY(x) {
 export function L_Gleeok_ExpandHorizontally(x) {
   const a = ram[ObjX + 2 + x];
   const y = (a + 2) & 0xff;
-  if (a >= ram[ObjX + 3 + x]) return L_Gleeok_SetSegmentX(x, y);
+  if ($br('Z_04:9013', a >= ram[ObjX + 3 + x])) return L_Gleeok_SetSegmentX(x, y);
+  $br('Z_04:9014', true);
   return L_Gleeok_DecSegmentX(x, y);
 }
 
@@ -349,7 +376,7 @@ export function Gleeok_ContractSegmentX(x) {
   // Gleeok_ContractSegmentX (Z_04)
   const a = ram[ObjX + 2 + x];
   const y = (a + 2) & 0xff;
-  if (a < ram[ObjX + 3 + x]) return L_Gleeok_SetSegmentX(x, y);
+  if ($br('Z_04:9024', a < ram[ObjX + 3 + x])) return L_Gleeok_SetSegmentX(x, y);
   return L_Gleeok_DecSegmentX(x, y); // falls through
 }
 
@@ -366,7 +393,8 @@ export function L_Gleeok_SetSegmentX(x, y) {
 /** Gleeok_ContractSegment (Z_04, unverified). X = segment: contract H or V at random. */
 export function Gleeok_ContractSegment(x) {
   // Gleeok_ContractSegment (Z_04)
-  if (!(ram[Random] & 0x80)) return Gleeok_ContractSegmentX(x);
+  if ($br('Z_04:9042', !(ram[Random] & 0x80))) return Gleeok_ContractSegmentX(x);
+  $br('Z_04:9043', true);
   return Gleeok_ContractSegmentY(x);
 }
 
@@ -378,7 +406,7 @@ export function Gleeok_WriteHeadOrBaseSpriteAndCheckCollisions(a, x) {
   ram[0x03] = 0x03;
   const tile = a; // PHA
   let o = (ram[GleeokCurNeck] << 3) & 0xff;
-  if (x !== 0x05) o = (o + 0x20) & 0xff;
+  if (!$br('Z_04:9073', x === 0x05)) o = (o + 0x20) & 0xff;
   Anim_WriteSpecificSprite(tile, x, o);
   return Gleeok_CheckCollisions(x);
 }
@@ -392,8 +420,8 @@ export function Gleeok_DrawHeadAndCheckCollisions() {
 /** Gleeok_DrawSegmentAndCheckCollisions (Z_04). X = segment slot: head $DC / neck $DA, then collide. */
 export function Gleeok_DrawSegmentAndCheckCollisions(x) {
   // Gleeok_DrawSegmentAndCheckCollisions (Z_04)
-  const a = x === 0x05 ? 0xdc : 0xda;
-  if (x === 0x05 || x === 0x01) return Gleeok_WriteHeadOrBaseSpriteAndCheckCollisions(a, x);
+  const a = $br('Z_04:9088', x !== 0x05) ? 0xda : 0xdc;
+  if ($br('Z_04:9092', x === 0x05) || $br('Z_04:9094', x === 0x01)) return Gleeok_WriteHeadOrBaseSpriteAndCheckCollisions(a, x);
   Anim_WriteLevelPaletteSprite(a, x);
   return Gleeok_CheckCollisions(x); // falls through
 }
@@ -405,23 +433,25 @@ export function Gleeok_DrawSegmentAndCheckCollisions(x) {
  */
 export function Gleeok_CheckCollisions(x) {
   // Gleeok_CheckCollisions (Z_04)
-  if (x === 0x05 || x === 0x01) {
+  if ($br('Z_04:9108', x === 0x05) || $br('Z_04:9110', x === 0x01)) {
     CheckMonsterCollisions(x);
-    if (ram[ObjShoveDir + x] !== 0) {
+    $pxa('Z_04:9117', ObjShoveDir, x);
+    if (!$br('Z_04:9118', ram[ObjShoveDir + x] === 0)) {
       ram[GleeokAnimationTimer] = 0x06;
       ram[Gleeok_WrithingCounter] = 0x06;
     }
     ResetShoveInfo(x);
-    if (x === 0x01) {
+    if ($br('Z_04:9128', x === 0x01)) {
       ResetObjMetastate(x); // @ResetMetastate
     } else {
       PlayBossHitCryIfNeeded(x);
-      if (ram[ObjMetastate + x] !== 0) return gleeokNeckDied(x);
+      $pxa('Z_04:9132', ObjMetastate, x);
+      if (!$br('Z_04:9133', ram[ObjMetastate + x] === 0)) return gleeokNeckDied(x);
     }
   }
   // @NextLoopSegment
   x = (x - 1) & 0xff;
-  if (x < 0x01) return L127FA_Exit();
+  if ($br('Z_04:9227', x < 0x01)) return L127FA_Exit();
   return Gleeok_DrawSegmentAndCheckCollisions(x);
 }
 
@@ -429,7 +459,7 @@ export function Gleeok_CheckCollisions(x) {
 function gleeokNeckDied(x) {
   ram[ObjHP + x] = 0x60;
   const saved = x; // TXA / PHA
-  if (x === 0x05) {
+  if (!$br('Z_04:9147', x !== 0x05)) {
     const s = (ram[GleeokCurNeck] + 0x07) & 0xff;
     ram[ObjUninitialized + s] = 0xff;
     ram[(ObjX + s) & 0xff] = ram[ObjX + 5]; // zero-page,X: wraps in page 0
@@ -441,22 +471,26 @@ function gleeokNeckDied(x) {
   let y = (ram[GleeokCurNeck] << 3) & 0xff;
   ram[Sprites + y] = 0xf8;
   ram[Sprites + 32 + y] = 0xf8;
-  const mask = tbl('LevelMasks').byte(ram[GleeokCurNeck]) | ram[GleeokDeadNeckMask];
+  const lm = tbl('LevelMasks');
+  $pxa('Z_04:9187', lm.addr, ram[GleeokCurNeck]);
+  const mask = lm.byte(ram[GleeokCurNeck]) | ram[GleeokDeadNeckMask];
   ram[GleeokDeadNeckMask] = mask;
   ram[0x00] = mask;
   let a = 0;
-  for (y = 4; y !== 0; y--) {
+  for (y = 4; ;) {
     const c = ram[0x00] & 1; // LSR $00
     ram[0x00] >>= 1;
     a = (a + c) & 0xff; // ADC #0
+    y--;
+    if (!$br('Z_04:9200', y !== 0)) break;
   }
   ram[0x00] = a;
-  if (((ram[ObjType + 1] - 0x41) & 0xff) !== ram[0x00]) return ResetObjMetastate(x);
+  if (!$br('Z_04:9211', ((ram[ObjType + 1] - 0x41) & 0xff) === ram[0x00])) return ResetObjMetastate(x);
   // @BossDied
   WriteBlankPrioritySprites();
   PlayBossDeathCry();
   ram[ObjMetastate + 1] = 0x11;
-  for (y = 0x01; y < 0x0a; y++) ram[ObjType + 1 + y] = 0x00;
+  for (y = 0x01; ;) { ram[ObjType + 1 + y] = 0x00; y++; if (!$br('Z_04:9252', y < 0x0a)) break; }
 }
 
 /**
@@ -465,20 +499,20 @@ function gleeokNeckDied(x) {
  */
 export function Gleeok_MoveHead() {
   // Gleeok_MoveHead (Z_04)
-  if (ram[Gleeok_ObjHeadDelay] !== 0) return Gleeok_DecHeadTimer();
+  if ($br('Z_04:9258', ram[Gleeok_ObjHeadDelay] !== 0)) return Gleeok_DecHeadTimer();
   ram[ObjX + 5] = Gleeok_ChangeCoordinateBySpeedFlag(ram[ObjX + 5], ram[Gleeok_ObjHeadSpeedX]);
   ram[ObjY + 5] = Gleeok_ChangeCoordinateBySpeedFlag(ram[ObjY + 5], ram[Gleeok_ObjHeadSpeedY]);
   ram[Gleeok_ObjHeadDirChangeCounter]++;
-  if (ram[Gleeok_ObjHeadDirChangeCounter] < 0x04) return L127FA_Exit();
+  if ($br('Z_04:9277', ram[Gleeok_ObjHeadDirChangeCounter] < 0x04)) return L127FA_Exit();
   ram[Gleeok_ObjHeadDirChangeCounter] = 0x00;
   ram[Gleeok_ObjHeadDirCounterH]++;
-  if (ram[Gleeok_ObjHeadDirCounterH] >= 0x0c) {
+  if (!$br('Z_04:9289', ram[Gleeok_ObjHeadDirCounterH] < 0x0c)) {
     ram[Gleeok_ObjHeadDirCounterH] = 0x00;
     ram[Gleeok_ObjHeadSpeedX] ^= 0xff;
   }
   // @CheckVertical
   ram[Gleeok_ObjHeadDirCounterV]++;
-  if (ram[Gleeok_ObjHeadDirCounterV] < 0x06) return L127FA_Exit();
+  if ($br('Z_04:9302', ram[Gleeok_ObjHeadDirCounterV] < 0x06)) return L127FA_Exit();
   ram[Gleeok_ObjHeadDirCounterV] = 0x00;
   ram[Gleeok_ObjHeadSpeedY] ^= 0xff;
   return L127FA_Exit();
@@ -495,7 +529,7 @@ export function Gleeok_DecHeadTimer() {
 /** Gleeok_ChangeCoordinateBySpeedFlag (Z_04). A = value, Y = flag (0: +1, else -1). @returns A */
 export function Gleeok_ChangeCoordinateBySpeedFlag(a, y) {
   // Gleeok_ChangeCoordinateBySpeedFlag (Z_04)
-  if (y !== 0) return (a - 1) & 0xff;
+  if ($br('Z_04:9324', y !== 0)) return (a - 1) & 0xff;
   return (a + 1) & 0xff;
 }
 
@@ -508,9 +542,9 @@ export function L_Gleeok_DecAnimTimerAndDraw() {
 /** Gleeok_DrawBody (Z_04). Animation timer ($10, or 6 while writhing), 4 frames, then the sprites. */
 export function Gleeok_DrawBody() {
   // Gleeok_DrawBody (Z_04)
-  if (ram[GleeokAnimationTimer] !== 0) return L_Gleeok_DecAnimTimerAndDraw();
+  if ($br('Z_04:9355', ram[GleeokAnimationTimer] !== 0)) return L_Gleeok_DecAnimTimerAndDraw();
   let a = 0x10;
-  if (ram[Gleeok_WrithingCounter] !== 0) {
+  if (!$br('Z_04:9364', ram[Gleeok_WrithingCounter] === 0)) {
     ram[Gleeok_WrithingCounter]--;
     a = 0x06;
   }
@@ -528,24 +562,28 @@ export function L_Gleeok_WriteSprites() {
   const offsets = tbl('SpriteOffsets');
   const tiles = tbl('GleeokBodyTiles0');
   ram[0x06] = 0x00;
-  let x = tbl('GleeokBodyBaseTileOffsets').byte(ram[GleeokBodyAnimationFrame]);
+  const base = tbl('GleeokBodyBaseTileOffsets');
+  $pxa('Z_04:9384', base.addr, ram[GleeokBodyAnimationFrame]);
+  let x = base.byte(ram[GleeokBodyAnimationFrame]);
   do {
     ram[0x07] = 0x00;
     do {
+      $pxa('Z_04:9394', offsets.addr, ram[RollingSpriteIndex]);
       const y = offsets.byte(ram[RollingSpriteIndex]);
       let v = ram[0x06];
       ram[Sprites + y] = (((v << 4) & 0xff) + 0x57 + ((v >> 4) & 1)) & 0xff; // ASL x4 / ADC (carry = bit 4)
+      $pxa('Z_04:9407', tiles.addr, x);
       ram[Sprites + 1 + y] = tiles.byte(x);
       let a = ram[ObjInvincibilityTimer + 5];
-      if (a === 0) a = 0x03;
+      if (!$br('Z_04:9415', a !== 0)) a = 0x03;
       ram[Sprites + 2 + y] = a & 0x03;
       v = ram[0x07];
       ram[Sprites + 3 + y] = (((v << 3) & 0xff) + 0x74 + ((v >> 5) & 1)) & 0xff; // ASL x3 / ADC (carry = bit 5)
       x = (x + 1) & 0xff;
       CycleCurSpriteIndex();
       ram[0x07]++;
-    } while (ram[0x07] < 0x03);
+    } while ($br('Z_04:9438', ram[0x07] < 0x03));
     ram[0x06]++;
-  } while (ram[0x06] < 0x02);
+  } while ($br('Z_04:9445', ram[0x06] < 0x02));
   return x;
 }

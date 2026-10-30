@@ -4,7 +4,8 @@
 
 import { loadRom, loadSymbols, checkRevision } from './core/rom.js';
 import { createMachine } from './core/machine.js';
-import { createLoop, runFrame } from './core/loop.js';
+import { createLoop, runReset, runVideoFrame } from './core/loop.js';
+import { setupTiming, timing } from './core/timing.js';
 import { getStoredRom, storeRom, forgetRom } from './core/romstore.js';
 import { loadSram, createAutoSaver } from './core/savestore.js';
 import { read } from './core/bus.js';
@@ -33,10 +34,14 @@ function fitCanvas() {
 }
 addEventListener('resize', fitCanvas);
 
+let picture = null; // RGBA picture of the last video frame (runVideoFrame)
 function present() {
-  image.data.set(machine.ppu.frameBuffer);
+  image.data.set(picture ?? machine.ppu.frameBuffer);
   ctx.putImageData(image, 0, 0);
 }
+
+// Cycle tracker (docs/TIMING.md): ?timing=jsnes (default: the CI oracle's rules), hardware or off.
+const TIMING_MODE = new URLSearchParams(location.search).get('timing') ?? 'jsnes';
 
 // ---------------------------------------------------------------- startup
 async function start(buffer, { remember = true } = {}) {
@@ -60,8 +65,15 @@ async function start(buffer, { remember = true } = {}) {
 
   const logic = createGameLogic();
   game = logic.ported ? logic : createTileViewer(); // tile viewer until P01 ports IsrReset/IsrNmi
+  try {
+    await setupTiming({ rom, mode: logic.ported ? TIMING_MODE : 'off' });
+  } catch (err) {
+    console.warn('timing off:', err);
+    await setupTiming({ rom, mode: 'off' });
+  }
   cpu.reset(); // same power-on flags/stack as src/headless.js
-  game.reset();
+  runReset(machine, game);
+  picture = null;
   $('intro').hidden = true;
   canvas.hidden = false;
   $('tableBtn').hidden = false;
@@ -74,7 +86,7 @@ async function start(buffer, { remember = true } = {}) {
     frame: () => {
       if (halted) return;
       try {
-        runFrame(machine, game);
+        picture = runVideoFrame(machine, game);
       } catch (err) {
         // A routine of a later package is still a stub (NotImplementedError): stop on this frame.
         halted = true;

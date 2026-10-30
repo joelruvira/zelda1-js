@@ -1,11 +1,16 @@
 // 2C02 PPU modelled at the memory/register level with a dot-based renderer.
 //
-// Timing model ("catch-up"): the PPU keeps a clock in PPU dots. Ported code mostly
-// runs "instantly"; register writes take effect at the current clock. Code that the
-// original times against the raster (the sprite-0 HUD split) advances the clock
-// explicitly: waitSprite0Hit() renders until the hit, cpuCycles(n) adds 3n dots, and
-// every register access first renders everything up to the clock. Mid-frame
-// $2000/$2005/$2006/$2007 accesses therefore behave as on hardware (loopy v/t/x/w).
+// Timing model ("catch-up"): the PPU keeps a clock in PPU dots and renders up to it before every
+// register access, so mid-frame $2000/$2005/$2006/$2007 accesses behave as on hardware (loopy v/t/x/w).
+// Two ways to drive the clock:
+//  * cycle tracker on (src/core/timing.js, docs/TIMING.md): `continuous` mode. The clock is absolute
+//    (`syncTo(dot)`, dot = 3 x CPU cycle since power-on); every access lands on its exact dot, the PPU
+//    crosses frame boundaries by itself (lag frames inside a long NMI) and `onFrame` is called at each
+//    completed picture.
+//  * legacy (tracker off): per NMI, beginFrame() / endFrame(); the logic runs "instantly", only the timed
+//    waits move the clock (waitStatus/cpuCycles).
+// jsnesCompat reproduces the CI oracle (jsnes 2.1.0) where it differs from hardware: no skipped dot on odd
+// frames, PPUMASK writes during a visible line take effect at the end of that line.
 //
 // Frame layout: a frame starts at scanline 241 dot 1 (vblank + NMI), runs through the
 // pre-render line 261 and visible lines 0-239, and ends at the next 241/1.
@@ -49,6 +54,11 @@ export class Ppu {
     this.setRgbPalette(NES_PALETTE);
     this.mirroring = MIRROR_HORIZONTAL;
     this.chrOffset = (a) => a & 0x1fff; // replaced by the mapper's CHR banking
+    /** Absolute timing (cycle tracker): the clock crosses frames; onFrame() after each picture. */
+    this.continuous = false;
+    this.onFrame = null;
+    /** Reproduce jsnes 2.1.0 (the oracle) instead of the hardware where they differ (see header). */
+    this.jsnesCompat = false;
     this.reset();
   }
 
@@ -64,6 +74,9 @@ export class Ppu {
     this.nextTile = 0; this.nextAttr = 0; this.nextLo = 0; this.nextHi = 0;
     this.lineSprites = []; // sprites for the line being drawn
     this.frameDone = false;
+    this.frameStart = 0; // absolute dot of the current frame's 241/1 (continuous mode)
+    this.pendingMask = -1; // jsnesCompat: PPUMASK write waiting for the end of the line
+    this.skippedThisFrame = false;
   }
 
   setRgbPalette(rgbList) { rgbList.forEach((c, i) => { this.rgba[i] = toAbgr(c); }); }
@@ -117,7 +130,18 @@ export class Ppu {
   }
 
   /** $2001 PPUMASK */
-  writePPUMASK(value) { this.sync(); this.mask = value & 0xff; }
+  writePPUMASK(value) {
+    this.sync();
+    // jsnes draws a scanline's pixels at its end: a write during a visible line affects the next one
+    if (this.jsnesCompat && this.line < 240) {
+      // jsnes composes every row up to the current line before the write: the new mask starts next line
+      this.pendingMask = value & 0xff;
+      this.pendingMaskLine = this.line + 1;
+      return;
+    }
+    this.pendingMask = -1;
+    this.mask = value & 0xff;
+  }
 
   /** $2002 PPUSTATUS (read clears vblank flag and the w latch). */
   readStatus() {
@@ -217,6 +241,55 @@ export class Ppu {
 
   frameDots() { return LINES * DOTS - ((this.oddFrame && this.renderingOn) ? 1 : 0); }
 
+  // ---------------------------------------------------------------- absolute clock (cycle tracker)
+  /** Absolute dot of the render position. */
+  get absDot() { return this.frameStart + this.pos; }
+
+  /** Continuous mode from power-on: the render position is 241/1 at absolute dot `dot`, vblank flag clear. */
+  powerOn(dot) {
+    this.continuous = true;
+    this.frameStart = dot;
+    this.pos = 0; this.clock = 0;
+    this.line = VBLANK_LINE; this.dot = 1;
+    this.status = 0;
+    this.frameDone = false;
+  }
+
+  /** Render up to absolute dot `dot` (accesses at a dot see every earlier dot emulated). */
+  syncTo(dot) {
+    const c = dot - this.frameStart;
+    if (c > this.clock) this.clock = c;
+    this.sync();
+  }
+
+  /** Absolute dot of the next frame start (241/1) after the render position, if nothing changes. */
+  nextFrameDot() {
+    let len = LINES * DOTS;
+    if (this.skipsDot()) len--;
+    return this.frameStart + len;
+  }
+
+  /** True when this frame drops the last dot of the pre-render line (odd frame, rendering on; hardware only). */
+  skipsDot() {
+    if (this.jsnesCompat || !this.oddFrame) return false;
+    // decided at dot 339 of the pre-render line (frame order: 241..261, then 0..240)
+    if ((this.line === PRERENDER && this.dot > 339) || this.line < VBLANK_LINE) return this.skippedThisFrame;
+    return this.renderingOn;
+  }
+
+  /** Frame boundary in continuous mode: 241/1, vblank flag set, picture complete. */
+  nextFrame() {
+    this.frameStart += this.pos;
+    this.clock -= this.pos;
+    this.pos = 0;
+    this.frameDone = false;
+    this.frameCount++;
+    this.oddFrame = !this.oddFrame;
+    this.skippedThisFrame = false;
+    this.status |= 0x80;
+    this.onFrame?.(this);
+  }
+
   /** Called at NMI time: starts a frame at 241/1 with the vblank flag set. */
   beginFrame() {
     this.clock = 0;
@@ -237,7 +310,50 @@ export class Ppu {
 
   /** Emulate dots until pos reaches clock. */
   sync() {
-    while (this.pos < this.clock && !this.frameDone) this.step();
+    if (this.continuous) {
+      const js = this.jsnesCompat;
+      while (this.pos < this.clock) {
+        if (this.frameDone) { this.nextFrame(); continue; }
+        if (js && this.line < 240 && this.dot >= 1 && this.dot <= 256) { this.pixelRunJsnes(); continue; }
+        const k = this.idleDots();
+        if (k > 0) this.skipDots(k < this.clock - this.pos ? k : this.clock - this.pos);
+        else if (js) this.stepJsnes();
+        else this.step();
+      }
+      if (this.frameDone) this.nextFrame(); // landed on 241/1: the vblank flag is already visible
+      // landed on 261/1: jsnes clears the flags on arrival there (advanceDots' post-loop check)
+      if (js && this.line === PRERENDER && this.dot === 1) { this.status &= ~0xe0; this.hitFound = false; this.hitLine = -1; }
+      return;
+    }
+    while (this.pos < this.clock && !this.frameDone) {
+      const k = this.idleDots();
+      if (k > 0) this.skipDots(k < this.clock - this.pos ? k : this.clock - this.pos);
+      else this.step();
+    }
+  }
+
+  /** Dots from the render position on which nothing can happen (skipped in one go by sync). */
+  idleDots() {
+    const line = this.line, dot = this.dot;
+    if (line >= 240 && line <= 260) {
+      // post-render and vblank lines: nothing (a PPUMASK pending for line 240 applies at its dot 0)
+      if (dot === 0 && (line === 240 || line === VBLANK_LINE)) return 0; // pending PPUMASK / 241/0 -> frame end
+      return DOTS - dot; // up to dot 0 of the next line (241/0 is stepped: the frame ends at 241/1)
+    }
+    if (this.jsnesCompat) {
+      if (line < 240 && dot >= 257 && dot < 340) {
+        const end = line === this.hitLine && this.hitX >= dot && this.hitX < 340 ? this.hitX : 340;
+        return end - dot;
+      }
+      if (line === PRERENDER && dot >= 2 && dot < 340) return 340 - dot;
+    }
+    return 0;
+  }
+
+  skipDots(n) {
+    this.pos += n;
+    this.dot += n;
+    if (this.dot >= DOTS) { this.dot = 0; this.line = (this.line + 1) % LINES; }
   }
 
   // ---------------------------------------------------------------- rendering
@@ -333,13 +449,14 @@ export class Ppu {
 
   /** Emulate one PPU dot at (line, dot), then advance. */
   step() {
+    if (this.jsnesCompat) { this.stepJsnes(); return; }
     const line = this.line;
     const dot = this.dot;
     const rendering = this.renderingOn;
     const visible = line < 240;
 
     if (line === PRERENDER && dot === 1) this.status &= ~0xe0; // clear vblank, sprite 0, overflow
-    if (line === VBLANK_LINE && dot === 1) this.status |= 0x80;
+    if (dot === 0 && this.pendingMask >= 0 && line === this.pendingMaskLine) { this.mask = this.pendingMask; this.pendingMask = -1; }
 
     if (visible && dot === 0) { if (rendering) this.evaluateSprites(line); else this.lineSprites = []; }
 
@@ -365,12 +482,169 @@ export class Ppu {
     // advance
     this.pos++;
     this.dot++;
-    if (line === PRERENDER && dot === 339 && this.oddFrame && rendering) this.dot = 341; // skipped dot
+    if (line === PRERENDER && dot === 339 && this.oddFrame && rendering && !this.jsnesCompat) {
+      this.dot = 341; // skipped dot
+      this.skippedThisFrame = true;
+    }
     if (this.dot >= DOTS) {
       this.dot = 0;
       this.line = (this.line + 1) % LINES;
-      if (this.line === VBLANK_LINE) this.frameDone = true;
+    } else if (this.dot === 1 && this.line === VBLANK_LINE) this.frameDone = true; // next 241/1
+
+  }
+
+  // ---------------------------------------------------------------- jsnes-compatible rendering
+  // jsnes 2.1.0 (the CI oracle) does not fetch tiles dot by dot: at the end of each line it renders the
+  // whole background of the next line from the vertical part of v and the horizontal part of t (+ fine
+  // X), then moves v one line down; PPUMASK changes apply from the next line; the sprite 0 flag rises
+  // on the dot of the hit pixel. Same registers (loopy v/t/x/w) and memory as the hardware path.
+
+  /** One dot in jsnes-compatible mode. */
+  stepJsnes() {
+    const line = this.line;
+    const dot = this.dot;
+    const visible = line < 240;
+    if (line === PRERENDER && dot === 1) { this.status &= ~0xe0; this.hitFound = false; this.hitLine = -1; }
+    if (dot === 0) {
+      if (this.pendingMask >= 0 && line === this.pendingMaskLine) { this.mask = this.pendingMask; this.pendingMask = -1; }
+      if (visible) {
+        if (this.renderingOn) this.evaluateSprites(line);
+        else this.lineSprites = [];
+      }
     }
+    if (visible && dot >= 1 && dot <= 256) {
+      if (this.renderingOn) this.pixelJsnes();
+      else this.blankPixel();
+    }
+    if (line === this.hitLine && dot === this.hitX && (this.mask & 0x18) === 0x18) this.status |= 0x40;
+    if (dot === 340) this.endLineJsnes(line);
+    this.pos++;
+    this.dot++;
+    if (this.dot >= DOTS) {
+      this.dot = 0;
+      this.line = (this.line + 1) % LINES;
+    } else if (this.dot === 1 && this.line === VBLANK_LINE) this.frameDone = true;
+  }
+
+  /**
+   * jsnes endScanline: render the next line's background (pre-render line: v = t first), then the
+   * sprite 0 hit: checked for the line just rendered (it fires during that line) and pre-computed for
+   * the line after (it fires one line early, during the next line, on the dot of the hit pixel).
+   */
+  endLineJsnes(line) {
+    const mask = this.pendingMask >= 0 && this.pendingMaskLine === line + 1 ? this.pendingMask : this.mask;
+    if ((mask & 0x18) === 0) return;
+    const both = (mask & 0x18) === 0x18;
+    const next = line === PRERENDER ? 0 : line + 1;
+    if (line === PRERENDER) this.v = this.t;
+    else if (line >= 240) return;
+    this.renderRowJsnes(next < 240);
+    if (!both || next >= 240) return;
+    if (!this.hitFound && next >= 1) {
+      const x = this.sprite0HitX(next, this.bgRow, mask);
+      if (x >= 0) { this.hitFound = true; this.hitLine = next; this.hitX = x; }
+    }
+    if (!this.hitFound && next + 1 < 240) {
+      const tmp = this.bgRowNext ??= new Uint8Array(WIDTH);
+      this.bgRowAt((this.v & ~0x041f) | (this.t & 0x041f), tmp);
+      const x = this.sprite0HitX(next + 1, tmp, mask);
+      if (x >= 0) { this.hitFound = true; this.hitLine = next; this.hitX = x; }
+    }
+  }
+
+  /** Background pixels of the line addressed by v (pal << 2 | pixel per x); returns v after 33 tiles. */
+  bgRowAt(v, row) {
+    const fineY = (v >> 12) & 7;
+    const table = (this.ctrl & 0x10) << 8;
+    let x = -this.x;
+    for (let tile = 0; tile < 33; tile++, x += 8) {
+      const tileIndex = this.vram[this.ntIndex(0x2000 | (v & 0x0fff))];
+      const at = this.vram[this.ntIndex(0x23c0 | (v & 0xc00) | ((v >> 4) & 0x38) | ((v >> 2) & 7))];
+      const pal = ((at >> (((v >> 4) & 4) | (v & 2))) & 3) << 2;
+      const base = table + tileIndex * 16 + fineY;
+      const lo = this.chr[this.chrOffset(base)];
+      const hi = this.chr[this.chrOffset(base + 8)];
+      for (let sx = 0; sx < 8; sx++) {
+        const px = x + sx;
+        if (px < 0 || px > 255) continue;
+        const bit = 7 - sx;
+        const p = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
+        row[px] = p ? pal | p : 0;
+      }
+      if ((v & 0x1f) === 31) { v &= ~0x1f; v ^= 0x400; } else v++;
+    }
+    return v;
+  }
+
+  /** Background of one line into bgRow, then v: +33 tiles across (from t), +1 line down. */
+  renderRowJsnes(draw) {
+    let v = (this.v & ~0x041f) | (this.t & 0x041f); // horizontal from t
+    if (draw) v = this.bgRowAt(v, this.bgRow ??= new Uint8Array(WIDTH));
+    this.v = v;
+    this.incY();
+  }
+
+  /** x of the first sprite-0 / background overlap on `line` (jsnes rules), -1 if none. */
+  sprite0HitX(line, row, mask) {
+    const h = (this.ctrl & 0x20) ? 16 : 8;
+    const sy = this.oam[0] + 1;
+    const r0 = line - sy;
+    if (r0 < 0 || r0 >= h) return -1;
+    const tile = this.oam[1], attr = this.oam[2], sx = this.oam[3];
+    const r = (attr & 0x80) ? h - 1 - r0 : r0;
+    const addr = h === 16 ? ((tile & 1) << 12) + ((tile & 0xfe) + (r >> 3)) * 16 + (r & 7) : ((this.ctrl & 0x08) << 9) + tile * 16 + r;
+    let lo = this.chr[this.chrOffset(addr)];
+    let hi = this.chr[this.chrOffset(addr + 8)];
+    if (attr & 0x40) { lo = reverseBits(lo); hi = reverseBits(hi); }
+    const leftClip = (mask & 0x06) !== 0x06;
+    for (let col = 0; col < 8; col++) {
+      const x = sx + col;
+      if (x >= 255) break;
+      if (leftClip && x < 8) continue;
+      const sp = (((hi >> (7 - col)) & 1) << 1) | ((lo >> (7 - col)) & 1);
+      if (sp && (row[x] & 3)) return x;
+    }
+    return -1;
+  }
+
+  /** Visible dots 1-256 of a line up to the clock, jsnes-compatible mode (the hot loop). */
+  pixelRunJsnes() {
+    let n = 257 - this.dot;
+    if (n > this.clock - this.pos) n = this.clock - this.pos;
+    const on = this.renderingOn;
+    const hit = this.line === this.hitLine ? this.hitX : -1;
+    for (let i = 0; i < n; i++) {
+      if (on) this.pixelJsnes(); else this.blankPixel();
+      if (this.dot === hit && (this.mask & 0x18) === 0x18) this.status |= 0x40;
+      this.dot++;
+    }
+    this.pos += n;
+  }
+
+  /** Pixel output in jsnes-compatible mode (background from bgRow). */
+  pixelJsnes() {
+    const x = this.dot - 1;
+    let bg = 0, bgPal = 0;
+    if ((this.mask & 0x08) && (x >= 8 || (this.mask & 0x02))) {
+      const b = this.bgRow ? this.bgRow[x] : 0;
+      bg = b & 3;
+      bgPal = b >> 2;
+    }
+    let color = bg ? this.palette[(bgPal << 2) | bg] : this.palette[0];
+    if ((this.mask & 0x10) && (x >= 8 || (this.mask & 0x04))) {
+      for (const s of this.lineSprites) {
+        const col = x - s.x;
+        if (col < 0 || col > 7) continue;
+        const sp = (((s.hi >> (7 - col)) & 1) << 1) | ((s.lo >> (7 - col)) & 1);
+        if (!sp) continue;
+        if (!s.behind || !bg) color = this.palette[(s.palette << 2) | sp];
+        break;
+      }
+    }
+    if (this.mask & 0x01) color &= 0x30;
+    const i = this.line * WIDTH + x;
+    this.indexBuffer[i] = color;
+    this.frame32[i] = this.rgba[color & 0x3f];
   }
 
   blankPixel() {

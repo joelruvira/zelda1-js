@@ -23,6 +23,7 @@ import { BeginShove, Link_BeHarmed } from '../combat/link-harm.js';
 import { AnimateWorldFading } from '../ppu/fade.js';
 import { PlaceWeaponForPlayerState } from './wield.js';
 import { ResetObjState } from './sword.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * WieldCandle (Z_01): a moving fire (state $21, q-speed $20) in the first free slot of $10/$11,
@@ -32,12 +33,12 @@ import { ResetObjState } from './sword.js';
 export function WieldCandle() {
   // WieldCandle (Z_01)
   let x = 0x10;
-  if (ram[ObjState + x] !== 0) {
+  if (!$br('Z_01:3999', ram[ObjState + x] === 0)) {
     x++;
-    if (ram[ObjState + x] !== 0) return x; // L69BE_Exit
+    if ($br('Z_01:4002', ram[ObjState + x] !== 0)) return x; // L69BE_Exit
   }
   // @NotInUse
-  if (ram[InvCandle] === 0x01 && ram[UsedCandle] !== 0) return x; // blue candle already used
+  if (!$br('Z_01:4008', ram[InvCandle] !== 0x01) && $br('Z_01:4010', ram[UsedCandle] !== 0)) return x; // blue candle already used
   ram[UsedCandle] = 0x01;
   ram[ObjGridOffset + x] = 0x00;
   ram[ObjPosFrac + x] = 0x00;
@@ -56,14 +57,16 @@ export function WieldCandle() {
 export function UpdateFire(x) {
   // UpdateFire (Z_07)
   let standing = true;
-  if (ram[ObjState + x] === 0x21) {
+  if (!$br('Z_07:4662', ram[ObjState + x] !== 0x21)) {
     // Move as if the grid offset were 0, then add the move to it (distance traveled).
+    $pxa('Z_07:4665', ObjGridOffset, x);
     const g = ram[ObjGridOffset + x]; // PHA
     ram[ObjGridOffset + x] = 0x00;
     ram[0x0f] = ram[ObjDir + x];
     MoveObject(x);
+    $pxa('Z_07:4677', ObjGridOffset, x);
     ram[ObjGridOffset + x] = g + ram[ObjGridOffset + x]; // PLA / CLC / ADC
-    if (Abs(ram[ObjGridOffset + x]) !== 0x10) {
+    if ($br('Z_07:4687', Abs(ram[ObjGridOffset + x]) !== 0x10)) {
       standing = false; // @DrawAndCheckCollisions
     } else {
       ram[ObjTimer + x] = 0x3f;
@@ -72,8 +75,8 @@ export function UpdateFire(x) {
   }
   if (standing) {
     // @StandingFie
-    if (ram[ObjTimer + x] === 0) return ResetObjState(x);
-    if (ram[CurLevel] !== 0) {
+    if ($br('Z_07:4697', ram[ObjTimer + x] === 0)) return ResetObjState(x);
+    if (!$br('Z_07:4701', ram[CurLevel] === 0)) {
       switchBank(4); // TXA / PHA ... PLA / TAX keep X
       UpdateCandle();
     }
@@ -86,11 +89,11 @@ export function UpdateFire(x) {
   DrawObjectWithType(0x00, x, 0x40);
 
   // Collision with Link.
-  if (ram[ObjInvincibilityTimer] !== 0) return; // L1F91D_Exit
+  if ($br('Z_07:4725', ram[ObjInvincibilityTimer] !== 0)) return; // L1F91D_Exit
   ram[0x00] = x;
   GetWideObjectMiddle(0x00, 0x02); // Link's middle in [04]/[05]
   GetWideObjectMiddle(ram[0x00], 0x00); // the fire's middle in [02]/[03]
-  if (DoObjectsCollide(0x0e) === 0) return; // L1F91D_Exit
+  if ($br('Z_07:4745', DoObjectsCollide(0x0e) === 0)) return; // L1F91D_Exit
   x = ram[0x00];
   ram[0x00] = 0x00; // Link is the defender
   BeginShove(x);
@@ -121,7 +124,7 @@ export function UpdateCandle() {
 /** UpdateCandle_Begin (Z_04): in a dark room, start a fade-to-light cycle ($C0). */
 export function UpdateCandle_Begin() {
   // UpdateCandle_Begin (Z_04)
-  if (IsDarkRoom_Bank4(ram[RoomId]) === 0) return UpdateCandle_Done();
+  if ($br('Z_04:11407', IsDarkRoom_Bank4(ram[RoomId]) === 0)) return UpdateCandle_Done();
   ram[FadeCycle] = 0xc0; // reverse of $40
   ram[BrighteningRoom]++;
   ram[CandleState]++; // L_Candle_IncState
@@ -136,9 +139,10 @@ export function UpdateCandle_Done() {
 /** UpdateCandle_Brightening (Z_04): fade; when done, stop brightening and go to state "done". */
 export function UpdateCandle_Brightening() {
   // UpdateCandle_Brightening (Z_04)
-  if (AnimateWorldFading() !== 0) return;
+  if (!$br('Z_04:11427', AnimateWorldFading() === 0)) return;
   // L_Candle_StopBrightening
   ram[BrighteningRoom] = 0x00;
+  $br('Z_04:11422', true);
   ram[CandleState]++; // L_Candle_IncState
   return UpdateCandle_Done();
 }
@@ -147,6 +151,7 @@ export function UpdateCandle_Brightening() {
 export function IsDarkRoom_Bank4(y) {
   // IsDarkRoom_Bank4 (Z_04)
   const a = ram[CurLevel];
-  if (a === 0) return a;
+  if ($br('Z_04:11438', a === 0)) return a;
+  $pxa('Z_04:11439', LevelBlockAttrsE, y);
   return peek(LevelBlockAttrsE + y) & 0x80;
 }

@@ -9,15 +9,16 @@ import { read, write, bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import { PatternBlockIndex, TransferredDemoPatterns, TransferredCommonPatterns, CurLevel } from '../../core/vars.js';
 import { TurnOffAllVideo } from '../boot.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * Shared body of TransferPatternBlock_Bank1/2/3 (@Loop): copy [$03:02] bytes from [$00:01] to PpuData,
  * updating the temporaries byte by byte like the 6502 loop, then INC PatternBlockIndex.
  */
-function copyPatternBytes() {
+function copyPatternBytes(pxRef, br1, br2) {
   const y = 0x00;
-  let a;
-  do {
+  for (;;) {
+    $pxa(pxRef, word(0x00), y);
     write(0x2007, read((word(0x00) + y) & 0xffff)); // LDA ($00), Y / STA PpuData_2007
     // Increment the 16-bit source address at [00:01].
     cpu.c = 0;
@@ -27,9 +28,9 @@ function copyPatternBytes() {
     cpu.c = 1;
     ram[0x03] = cpu.sbc(ram[0x03], 0x01);
     ram[0x02] = cpu.sbc(ram[0x02], 0x00);
-    a = ram[0x02];
-    if (a === 0) a = ram[0x03];
-  } while (a !== 0);
+    if ($br(br1, ram[0x02] !== 0)) continue;
+    if (!$br(br2, ram[0x03] !== 0)) break;
+  }
   ram[PatternBlockIndex]++;
 }
 
@@ -42,19 +43,19 @@ export function TransferDemoPatterns() {
   const addrs = table(bus.rom, 'DemoPatternBlockAddrs');
   const sizes = table(bus.rom, 'DemoPatternBlockSizes');
   const vram = table(bus.rom, 'DemoPatternVramAddrs');
-  let a;
-  do {
+  for (;;) {
     // Put block address in [00:01] and size in [03:02]; the size and VRAM address are high byte first.
     let x = (ram[PatternBlockIndex] << 1) & 0xff;
-    ram[0x00] = addrs.byte(x);
-    ram[0x02] = sizes.byte(x);
-    write(0x2006, vram.byte(x));
+    $pxa('Z_01:1633', addrs.addr, x); ram[0x00] = addrs.byte(x);
+    $pxa('Z_01:1635', sizes.addr, x); ram[0x02] = sizes.byte(x);
+    $pxa('Z_01:1637', vram.addr, x); write(0x2006, vram.byte(x));
     x = (x + 1) & 0xff;
-    ram[0x01] = addrs.byte(x);
-    ram[0x03] = sizes.byte(x);
+    $pxa('Z_01:1640', addrs.addr, x); ram[0x01] = addrs.byte(x);
+    $pxa('Z_01:1642', sizes.addr, x); ram[0x03] = sizes.byte(x);
+    $pxa('Z_01:1644', vram.addr, x);
     TransferPatternBlock_Bank1(vram.byte(x));
-    a = ram[PatternBlockIndex];
-  } while (a !== 0x02);
+    if (!$br('Z_01:1650', ram[PatternBlockIndex] !== 0x02)) break;
+  }
   ram[TransferredDemoPatterns] = 0xa5;
   ram[PatternBlockIndex] = 0x00;
   return 0x00;
@@ -64,7 +65,7 @@ export function TransferDemoPatterns() {
 export function TransferPatternBlock_Bank1(a) {
   // TransferPatternBlock_Bank1 (Z_01)
   write(0x2006, a);
-  copyPatternBytes();
+  copyPatternBytes('Z_01:1668', 'Z_01:1691', 'Z_01:1693');
 }
 
 // ------------------------------------------------------------------ bank 2 (common)
@@ -76,18 +77,18 @@ export function TransferCommonPatterns() {
   const addrs = table(bus.rom, 'CommonPatternBlockAddrs');
   const sizes = table(bus.rom, 'CommonPatternBlockSizes');
   const vram = table(bus.rom, 'CommonPatternVramAddrs');
-  let a;
-  do {
+  for (;;) {
     let x = (ram[PatternBlockIndex] << 1) & 0xff;
     ram[0x00] = addrs.byte(x);
-    ram[0x02] = sizes.byte(x);
-    write(0x2006, vram.byte(x));
+    $pxa('Z_02:84', sizes.addr, x); ram[0x02] = sizes.byte(x);
+    $pxa('Z_02:86', vram.addr, x); write(0x2006, vram.byte(x));
     x = (x + 1) & 0xff;
     ram[0x01] = addrs.byte(x);
-    ram[0x03] = sizes.byte(x);
+    $pxa('Z_02:91', sizes.addr, x); ram[0x03] = sizes.byte(x);
+    $pxa('Z_02:93', vram.addr, x);
     TransferPatternBlock_Bank2(vram.byte(x));
-    a = ram[PatternBlockIndex];
-  } while (a !== 0x03);
+    if (!$br('Z_02:99', ram[PatternBlockIndex] !== 0x03)) break;
+  }
   ram[TransferredCommonPatterns] = 0x5a; // mark this block copied
   ram[PatternBlockIndex] = 0x00; // reset pattern block index
   return 0x00;
@@ -97,7 +98,7 @@ export function TransferCommonPatterns() {
 export function TransferPatternBlock_Bank2(a) {
   // TransferPatternBlock_Bank2 (Z_02)
   write(0x2006, a);
-  copyPatternBytes();
+  copyPatternBytes('Z_02:117', 'Z_02:140', 'Z_02:142');
 }
 
 // ------------------------------------------------------------------ bank 3 (level)
@@ -107,12 +108,13 @@ export function TransferLevelPatternBlocks() {
   TurnOffAllVideo();
   read(0x2002);
   ResetPatternBlockIndex();
-  if (ram[CurLevel] !== 0) return TransferLevelPatternBlocksUW();
-  do {
+  if ($br('Z_03:68', ram[CurLevel] !== 0)) return TransferLevelPatternBlocksUW();
+  for (;;) {
     // @LoopBlockOW: there are two blocks.
     FetchPatternBlockInfoOW();
     TransferPatternBlock_Bank3();
-  } while (ram[PatternBlockIndex] !== 0x02);
+    if (!$br('Z_03:75', ram[PatternBlockIndex] !== 0x02)) break;
+  }
   return ResetPatternBlockIndex(); // falls through
 }
 
@@ -125,10 +127,11 @@ export function ResetPatternBlockIndex() {
 
 export function TransferLevelPatternBlocksUW() {
   // TransferLevelPatternBlocksUW (Z_03)
-  do {
+  for (;;) {
     FetchPatternBlockAddrUW();
     FetchPatternBlockSizeUW(); // falls through into TransferPatternBlock_Bank3
-  } while (ram[PatternBlockIndex] !== 0x02);
+    if (!$br('Z_03:87', ram[PatternBlockIndex] !== 0x02)) break;
+  }
   // Two common blocks (BG and sprites) are done; now the level's special and boss sprite patterns.
   FetchPatternBlockAddrUWSpecial();
   FetchPatternBlockSizeUW();
@@ -141,8 +144,9 @@ export function FetchPatternBlockAddrUW() {
   // FetchPatternBlockAddrUW (Z_03): [$00:01] = PatternBlockSrcAddrsUW[PatternBlockIndex]
   const t = table(bus.rom, 'PatternBlockSrcAddrsUW');
   let x = (ram[PatternBlockIndex] << 1) & 0xff;
-  ram[0x00] = t.byte(x);
+  $pxa('Z_03:102', t.addr, x); ram[0x00] = t.byte(x);
   x = (x + 1) & 0xff;
+  $pxa('Z_03:105', t.addr, x);
   const a = ram[0x01] = t.byte(x);
   return a;
 }
@@ -153,10 +157,11 @@ export function FetchPatternBlockInfoOW() {
   const src = table(bus.rom, 'PatternBlockSrcAddrsOW');
   const sizes = table(bus.rom, 'PatternBlockSizesOW');
   let x = (ram[PatternBlockIndex] << 1) & 0xff;
-  ram[0x00] = src.byte(x);
-  ram[0x02] = sizes.byte(x);
+  $pxa('Z_03:117', src.addr, x); ram[0x00] = src.byte(x);
+  $pxa('Z_03:119', sizes.addr, x); ram[0x02] = sizes.byte(x);
   x = (x + 1) & 0xff;
-  ram[0x01] = src.byte(x);
+  $pxa('Z_03:122', src.addr, x); ram[0x01] = src.byte(x);
+  $pxa('Z_03:124', sizes.addr, x);
   const a = ram[0x03] = sizes.byte(x);
   return a;
 }
@@ -167,6 +172,7 @@ export function FetchPatternBlockAddrUWSpecial() {
   let x = (ram[CurLevel] << 1) & 0xff;
   ram[0x00] = t.byte(x);
   x = (x + 1) & 0xff;
+  
   const a = ram[0x01] = t.byte(x);
   return a;
 }
@@ -175,8 +181,9 @@ export function FetchPatternBlockUWBoss() {
   // FetchPatternBlockUWBoss (Z_03): [$00:01] = BossPatternBlockSrcAddrs[CurLevel]
   const t = table(bus.rom, 'BossPatternBlockSrcAddrs');
   let x = (ram[CurLevel] << 1) & 0xff;
-  ram[0x00] = t.byte(x);
+  $pxa('Z_03:143', t.addr, x); ram[0x00] = t.byte(x);
   x = (x + 1) & 0xff;
+  $pxa('Z_03:146', t.addr, x);
   const a = ram[0x01] = t.byte(x);
   return a;
 }
@@ -185,9 +192,9 @@ export function FetchPatternBlockSizeUW() {
   // FetchPatternBlockSizeUW (Z_03): [$03:02] = PatternBlockSizesUW[PatternBlockIndex]; falls through
   const t = table(bus.rom, 'PatternBlockSizesUW');
   let x = (ram[PatternBlockIndex] << 1) & 0xff;
-  ram[0x02] = t.byte(x);
+  $pxa('Z_03:154', t.addr, x); ram[0x02] = t.byte(x);
   x = (x + 1) & 0xff;
-  ram[0x03] = t.byte(x);
+  $pxa('Z_03:157', t.addr, x); ram[0x03] = t.byte(x);
   return TransferPatternBlock_Bank3();
 }
 
@@ -199,8 +206,8 @@ export function TransferPatternBlock_Bank3() {
   // TransferPatternBlock_Bank3 (Z_03)
   const t = table(bus.rom, 'PatternBlockPpuAddrs');
   let x = (ram[PatternBlockIndex] << 1) & 0xff;
-  write(0x2006, t.byte(x));
+  $pxa('Z_03:170', t.addr, x); write(0x2006, t.byte(x));
   x = (x + 1) & 0xff;
-  write(0x2006, t.byte(x));
-  copyPatternBytes();
+  $pxa('Z_03:173', t.addr, x); write(0x2006, t.byte(x));
+  copyPatternBytes('Z_03:178', 'Z_03:201', 'Z_03:203');
 }

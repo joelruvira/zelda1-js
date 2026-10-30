@@ -2,6 +2,7 @@
 // flyer init/decision helpers shared with the flying ghini. X = object slot in every routine.
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { tableJump } from '../../core/asm.js';
 import { label } from '../../core/rom.js';
 import {
@@ -40,22 +41,25 @@ export function EndInitFlyer(x) {
  */
 export function UpdatePeahat(x) {
   // UpdatePeahat (Z_04)
-  if (ram[ObjShoveDir + x] !== 0) {
+  if (!$br('Z_04:4026', ram[ObjShoveDir + x] === 0)) {
     Obj_Shove(x);
-  } else if ((ram[InvClock] | ram[ObjStunTimer + x]) === 0) {
+  } else if (!$br('Z_04:4036', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) {
     ControlPeahatFlight(x);
     MoveFlyer(x);
   }
   // @DrawAndCheckCollisions
   Anim_FetchObjPosForSpriteDescriptor(x);
+  $pxa('Z_04:4047', Flyer_ObjDistTraveled, x);
   DrawObjectMirrored(ram[Flyer_ObjDistTraveled + x] & 0x01, x);
-  if (ram[Flyer_ObjFlyingState + x] !== 0x05) return CheckLinkCollision(x);
+  $pxa('Z_04:4053', Flyer_ObjFlyingState, x);
+  if (!$br('Z_04:4055', ram[Flyer_ObjFlyingState + x] === 0x05)) return CheckLinkCollision(x);
   return CheckMonsterCollisions(x);
 }
 
 /** ControlPeahatFlight (Z_04). X = peahat: ControlPeahatFlight_JumpTable by flying state. */
 export function ControlPeahatFlight(x) {
   // ControlPeahatFlight (Z_04)
+  $pxa('Z_04:4061', Flyer_ObjFlyingState, x);
   return tableJump(label('ControlPeahatFlight_JumpTable').addr, ram[Flyer_ObjFlyingState + x], [
     () => Flyer_SpeedUp(x),
     () => Flyer_PeahatDecideState(x),
@@ -71,9 +75,9 @@ export function Flyer_PeahatDecideState(x) {
   // Flyer_PeahatDecideState (Z_04)
   let y = 0x02;
   const a = ram[Random + x];
-  if (a < 0xb0) {
+  if (!$br('Z_04:4082', a >= 0xb0)) {
     y++;
-    if (a < 0x20) y++;
+    if (!$br('Z_04:4085', a >= 0x20)) y++;
   }
   return Flyer_SetFlyingStateAnd6Turns(x, y); // falls through
 }

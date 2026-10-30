@@ -5,6 +5,7 @@
 import { ram } from '../../core/ram.js';
 import { tableJump } from '../../core/asm.js';
 import { label } from '../../core/rom.js';
+import { $br } from '../../core/timing.js';
 import {
   GameSubmode, GameMode, CurRow, CurOpenedDoors, CurLevel, TileBufSelector, RoomId, IsSprite0CheckActive,
   ObjGridOffset, ObjDir, ObjInputDir, ObjX, ObjY, IsUpdatingMode, UndergroundExitType,
@@ -64,7 +65,7 @@ export function InitModeSubroom_Sub0() {
   // InitModeSubroom_Sub0 (Z_05)
   ram[CurRow] = 0x00;
   ram[CurOpenedDoors] = 0x00;
-  if (ram[CurLevel] !== 0) return DrawSpritesBetweenRoomsAndAdvanceSubmode();
+  if ($br('Z_05:6602', ram[CurLevel] !== 0)) return DrawSpritesBetweenRoomsAndAdvanceSubmode();
   DrawSpritesBetweenRoomsAndAdvanceSubmode();
   return WriteAndEnableSprite0();
 }
@@ -89,28 +90,31 @@ export function InitModeSubroom_AdvanceSubmode() {
 
 export function InitModeSubroom_AnimateFade() {
   // InitModeSubroom_AnimateFade (Z_05)
-  if (ram[CurLevel] === 0) return InitModeSubroom_AdvanceSubmode();
+  if ($br('Z_05:6629', ram[CurLevel] === 0)) return InitModeSubroom_AdvanceSubmode();
   return UpdateMode11Death_Sub8_AnimateFade();
 }
 
 export function InitModeA_Sub2() {
   // InitModeA_Sub2 (Z_05): light cellar -> dark cellar cycle
+  $br('Z_05:6638', true);
   return StartFadeCycleAndAnimate(0x20);
 }
 
 export function InitModeA_Sub8() {
   // InitModeA_Sub8 (Z_05): dark cellar -> light level cycle
+  $br('Z_05:6642', true);
   return StartFadeCycleAndAnimate(0x80);
 }
 
 export function InitModeB_Sub1() {
   // InitModeB_Sub1 (Z_05): transfer the cave BG palette rows
+  $br('Z_05:6647', true);
   return L1712E_SelectTransferBufAndAdvanceSubmode(0x3e);
 }
 
 export function InitModeA_Sub1() {
   // InitModeA_Sub1 (Z_05)
-  if (ram[CurLevel] !== 0) return InitModeSubroom_AdvanceSubmode();
+  if ($br('Z_05:6651', ram[CurLevel] !== 0)) return InitModeSubroom_AdvanceSubmode();
   // Transfer the OW palette again: it was changed for a cave.
   return PatchAndCueLevelPalettesTransferAndAdvanceSubmode();
 }
@@ -144,7 +148,7 @@ export function InitModeAOrB_TransferBottomHalfAttrs() {
 
 export function InitMode_WalkCave() {
   // InitMode_WalkCave (Z_05)
-  if (ram[ObjGridOffset] === 0) return RunCrossRoomTasksAndBeginUpdateMode(); // end of the walk
+  if ($br('Z_05:6690', ram[ObjGridOffset] === 0)) return RunCrossRoomTasksAndBeginUpdateMode(); // end of the walk
   // Move and draw facing up.
   const d = ram[ObjDir];
   ram[ObjInputDir] = d;

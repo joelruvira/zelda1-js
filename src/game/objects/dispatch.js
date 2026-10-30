@@ -6,6 +6,7 @@
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { switchBank, tableJump } from '../../core/asm.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { table, label } from '../../core/rom.js';
 import {
   ObjUninitialized, ObjType, ObjTimer, ObjMetastate, CurObjIndex, CurLevel, LevelBlockAttrsByteF,
@@ -70,7 +71,8 @@ import { InitGanon, UpdateGanon } from '../bosses/ganon.js';
 import { InitZelda, UpdateZelda, UpdateGuardFire } from '../bosses/zelda.js';
 
 // Types that do not start in a spawning cloud: armos ($1E), flying ghini ($22), and >= $53.
-const spawnsInCloud = (t) => t !== 0x1e && t !== 0x22 && t < 0x53;
+// r = the three branch refs (BEQ armos, BEQ flying ghini, BCS >= $53).
+const spawnsInCloud = (t, r) => !$br(r[0], t === 0x1e) && !$br(r[1], t === 0x22) && !$br(r[2], t >= 0x53);
 
 /**
  * UpdateObject (Z_07). A = object type, X = object. Switches to bank 4; initializes the object
@@ -80,18 +82,21 @@ const spawnsInCloud = (t) => t !== 0x1e && t !== 0x22 && t < 0x53;
 export function UpdateObject(a, x) {
   // UpdateObject (Z_07)
   switchBank(4); // PHA / PLA around it
+  $pxa('Z_07:5273', ObjUninitialized, x);
   const y = ram[ObjUninitialized + x];
   ram[0x0f] = y;
-  if (y !== 0) {
+  if (!$br('Z_07:5275', y === 0)) {
     // Objects that start with a spawning cloud wait 7 frames (overridden by the init).
-    if (spawnsInCloud(ram[ObjType + x])) ram[ObjTimer + x] = 0x07;
+    $pxa('Z_07:5282', ObjType, x);
+    if (spawnsInCloud(ram[ObjType + x], ['Z_07:5284', 'Z_07:5286', 'Z_07:5288'])) ram[(ObjTimer + x) & 0xff] = 0x07;
     // @Init
     ram[ObjUninitialized + x] = 0x00;
     return InitObject(); // JMP
   }
   // @Update
-  if (ram[ObjMetastate + x] !== 0) return UpdateMetaObject(x);
-  if (a >= 0x6a) {
+  $pxa('Z_07:5303', ObjMetastate, x);
+  if (!$br('Z_07:5304', ram[ObjMetastate + x] === 0)) return UpdateMetaObject(x);
+  if (!$br('Z_07:5312', a < 0x6a)) {
     switchBank(1);
     return UpdateCavePerson(x);
   }
@@ -138,15 +143,17 @@ export function InitObject() {
   // InitObject (Z_07)
   let x = ram[CurObjIndex];
   let fromEdges = false;
-  if (ram[CurLevel] === 0 && (ram[LevelBlockAttrsByteF] & 0x08)) {
+  if (!$br('Z_07:5504', ram[CurLevel] !== 0) && !$br('Z_07:5507', (ram[LevelBlockAttrsByteF] & 0x08) === 0)) {
+    $pxa('Z_07:5508', ObjType, x);
     const t = ram[ObjType + x];
-    fromEdges = t !== 0x11 && t !== 0x40 && t !== 0x1e && t !== 0x2e && t < 0x53;
+    fromEdges = !$br('Z_07:5510', t === 0x11) && !$br('Z_07:5512', t === 0x40) && !$br('Z_07:5514', t === 0x1e)
+      && !$br('Z_07:5516', t === 0x2e) && !$br('Z_07:5518', t >= 0x53);
   }
   if (fromEdges) {
     for (;;) {
       // @UninitMonsterFromEdge: until the long timer expires, the monster stays uninitialized.
       const a = ram[MonstersFromEdgesLongTimer];
-      if (a !== 0) {
+      if (!$br('Z_07:5525', a === 0)) {
         ram[ObjUninitialized + x] = a;
         return;
       }
@@ -155,12 +162,12 @@ export function InitObject() {
       switchBank(5);
       FindNextEdgeSpawnCell();
       const cell = ram[CurEdgeSpawnCell];
-      ram[ObjX + x] = (cell << 4) & 0xff; // column in the low nibble
-      ram[ObjY + x] = ((cell & 0xf0) - 0x03) & 0xff; // row in the high nibble
+      ram[(ObjX + x) & 0xff] = (cell << 4) & 0xff; // column in the low nibble
+      ram[(ObjY + x) & 0xff] = ((cell & 0xf0) - 0x03) & 0xff; // row in the high nibble
       // Next monster in 20 to 50 frames.
-      ram[MonstersFromEdgesLongTimer] = (ram[Random + 1 + x] & 0x03) + 0x02;
+      ram[MonstersFromEdgesLongTimer] = (ram[(Random + 1 + x) & 0xff] & 0x03) + 0x02; // zp,X
       switchBank(5);
-      if (IsDistanceSafeToSpawn(x)) continue; // too close to Link: try again later
+      if ($br('Z_07:5567', !!IsDistanceSafeToSpawn(x))) continue; // too close to Link: try again later
       ram[ObjMetastate + x] = 0x00; // no spawning cloud
       break;
     }
@@ -168,22 +175,27 @@ export function InitObject() {
   // @NormalSpawn
   switchBank(4);
   x = ram[CurObjIndex];
+  $pxa('Z_07:5582', ObjType, x);
   let y = ram[ObjType + x];
   // Monsters that spawn in a cloud start moving at different times (timer = slot).
-  if (spawnsInCloud(y)) ram[ObjTimer + x] = x;
+  if (spawnsInCloud(y, ['Z_07:5584', 'Z_07:5586', 'Z_07:5588'])) ram[(ObjTimer + x) & 0xff] = x;
   // @FetchAttrs
-  ram[ObjAttr + x] = table(bus.rom, 'ObjectTypeToAttributes').byte(y);
+  const attrs = table(bus.rom, 'ObjectTypeToAttributes');
+  $pxa('Z_07:5594', attrs.addr, y);
+  ram[ObjAttr + x] = attrs.byte(y);
   let a = y;
   ram[0x00] = a; // [00] holds the object type
   y = a >> 1; // hit points are packed two to a byte
-  ram[ObjHP + x] = ExtractHitPointValue(table(bus.rom, 'ObjectTypeToHpPairs').byte(y));
+  const hp = table(bus.rom, 'ObjectTypeToHpPairs');
+  $pxa('Z_07:5604', hp.addr, y);
+  ram[ObjHP + x] = ExtractHitPointValue(hp.byte(y));
   a = ram[0x00];
-  if (a >= 0x6a) {
+  if (!$br('Z_07:5611', a < 0x6a)) {
     switchBank(1);
     return InitCave(x);
   }
   // @CheckTileObj
-  if (a >= 0x5f) return InitTileObjOrItem(x);
+  if (!$br('Z_07:5621', a < 0x5f)) return InitTileObjOrItem(x);
   initHandlers ??= [
     DoNothing, InitWalker, InitWalker, InitWalker, InitWalker, InitWalker, InitWalker,
     InitSlowOctorockOrGhini, InitFastOctorock, InitSlowOctorockOrGhini, InitFastOctorock, InitDarknut,
@@ -212,7 +224,7 @@ export function InitObject() {
  */
 export function ExtractHitPointValue(a) {
   // ExtractHitPointValue (Z_04)
-  if (ram[0x00] & 0x01) return (a << 4) & 0xff; // @OddType
+  if ($br('Z_04:11008', (ram[0x00] & 0x01) !== 0)) return (a << 4) & 0xff; // @OddType
   return a & 0xf0;
 }
 
@@ -220,7 +232,8 @@ export function ExtractHitPointValue(a) {
 export function InitTileObjOrItem(x) {
   // InitTileObjOrItem (Z_07)
   ram[ObjAttr + x] = 0x81; // custom collision check and drawing + reverse after hitting Link
-  return ResetObjMetastateAndTimer(x); // BNE (always)
+  $br('Z_07:5845', true); // BNE (always)
+  return ResetObjMetastateAndTimer(x);
 }
 
 /** InitFluteSecret (Z_07). X = object: starts the secret color cycle. @returns A = 0 */

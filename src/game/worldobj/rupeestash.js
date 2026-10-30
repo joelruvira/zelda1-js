@@ -11,19 +11,25 @@ import { DestroyMonster } from '../objects/slots.js';
 import { Anim_FetchObjPosForSpriteDescriptor } from '../draw/anim.js';
 import { DrawItemInInventory } from '../hud/statusbar.js';
 import { TakeOneRupee } from '../items/take.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitRupeeStash_Full (Z_01). X = object slot: makes $A rupee objects in slots $A..1. @returns X = 0 */
 export function InitRupeeStash_Full(x) {
   // InitRupeeStash_Full (Z_01)
+  $pxa('Z_01:2377', ObjAttr, x);
   ram[0x01] = ram[ObjAttr + x];
   ram[0x00] = 0x35; // rupee stash type
   const xs = table(bus.rom, 'RupeeStashXs');
   const ys = table(bus.rom, 'RupeeStashYs');
-  for (x = 0x0a; x !== 0; x--) {
+  for (x = 0x0a; ;) {
     // @LoopRupee
     InitOneSimpleObject(x);
+    $pxa('Z_01:2390', xs.addr - 1, x);
     ram[ObjX + x] = xs.byte(x - 1); // RupeeStashXs-1, X
+    $pxa('Z_01:2392', ys.addr - 1, x);
     ram[ObjY + x] = ys.byte(x - 1);
+    x--;
+    if (!$br('Z_01:2395', x !== 0)) break;
   }
   return x;
 }
@@ -42,8 +48,8 @@ export function InitOneSimpleObject(x) {
 export function UpdateRupeeStash_Full(x) {
   // UpdateRupeeStash_Full (Z_01)
   const saved = x; // TXA / PHA
-  if (Abs((ram[ObjY] - ram[ObjY + x]) & 0xff) < 0x09
-      && Abs((ram[ObjX] - ram[ObjX + x]) & 0xff) < 0x09) {
+  if (!$br('Z_01:2619', Abs((ram[ObjY] - ram[ObjY + x]) & 0xff) >= 0x09)
+      && !$br('Z_01:2625', Abs((ram[ObjX] - ram[ObjX + x]) & 0xff) >= 0x09)) {
     TakeOneRupee();
     DestroyMonster(x);
     ram[RoomObjCount] = 0x00;

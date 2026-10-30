@@ -5,6 +5,7 @@ import { ram, peek } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { switchBank, tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   CurLevel, ObjDir, RoomId, NextRoomId, GameMode, ObjY, ObjX, ObjInputDir, LevelInfo_CellarRoomIdArray,
   LevelBlockAttrsA, LevelBlockAttrsB, LevelBlockAttrsC, ObjGridOffset, GameSubmode, IsUpdatingMode,
@@ -21,10 +22,14 @@ import { EndGameMode12 } from '../modes/mode12-endlevel.js';
 const E7 = 0xe7; // [E7]: door bit / direction (unnamed in the asm)
 
 /** The single-bit mask search of CalculateNextRoomForDoor / CalcNextRoomByDir: X for direction A. */
-function directionIndex(a) {
+// `ref` is the loop's branch: BEQ back (taken = no match) in CalculateNextRoomForDoor, BNE out
+// (taken = match) in CalcNextRoomByDir.
+function directionIndex(a, ref, takenOnMatch) {
   ram[0x00] = 0x01;
   let x = 0x03;
-  for (let n = 0; !(a & ram[0x00]); n++) {
+  for (let n = 0; ; n++) {
+    const match = (a & ram[0x00]) !== 0;
+    if ($br(ref, takenOnMatch ? match : !match) === takenOnMatch) break;
     // The original loops forever without a direction bit in the low nibble.
     if (n > 0x100) throw new Error(`next room: direction $${a.toString(16)} has no bit (original hangs)`);
     ram[0x00] = (ram[0x00] << 1) & 0xff;
@@ -41,10 +46,11 @@ export function CalculateNextRoom() {
   // CalculateNextRoom (Z_07)
   let a;
   let y;
-  if (ram[CurLevel] === 0) {
+  if ($br('Z_07:750', ram[CurLevel] === 0)) {
     // CalculateNextRoomOW: all directions are open.
     y = ram[ObjDir];
     a = 0x00;
+    $br('Z_07:778', true);
   } else {
     // Door type for the player's direction.
     ram[0x02] = ram[ObjDir];
@@ -74,18 +80,20 @@ export function CalculateNoNextRoom() {
 export function CalculateNextRoomForDoor() {
   // CalculateNextRoomForDoor (Z_05)
   // Door bit 1, 2, 4, 8 -> index 3, 2, 1, 0.
-  const x = directionIndex(ram[E7]);
+  const x = directionIndex(ram[E7], 'Z_05:7505', false);
   ram[0x04e4] = GetUniqueRoomId(); // UNKNOWN in the asm: holds room layout, unused
+  $pxa('Z_05:7508', table(bus.rom, 'NextRoomIdOffsets').addr, x);
   ram[NextRoomId] = (table(bus.rom, 'NextRoomIdOffsets').byte(x) + ram[RoomId]) & 0xff;
-  if (ram[CurLevel] === 0) CheckMazes();
-  if (!(ram[NextRoomId] & 0x80)) return MaskCurPpuMaskGrayscale();
+  if (!$br('Z_05:7513', ram[CurLevel] !== 0)) CheckMazes();
+  if ($br('Z_05:7517', !(ram[NextRoomId] & 0x80))) return MaskCurPpuMaskGrayscale();
   return EndGameMode12(); // falls through into MaskCurPpuMaskGrayscale
 }
 
 /** CalcNextRoomByDir (Z_05). A = direction. Uses [00]. @returns A = next room ID */
 export function CalcNextRoomByDir(a) {
   // CalcNextRoomByDir (Z_05)
-  const x = directionIndex(a & 0xff);
+  const x = directionIndex(a & 0xff, 'Z_05:7549', true);
+  $pxa('Z_05:7554', table(bus.rom, 'NextRoomIdOffsets').addr, x);
   return (table(bus.rom, 'NextRoomIdOffsets').byte(x) + ram[RoomId]) & 0xff;
 }
 
@@ -99,21 +107,25 @@ export function CalcNextRoomByDir(a) {
 export function CheckSubroom() {
   // CheckSubroom (Z_05)
   const mode = ram[GameMode];
-  if (mode === 0x09) {
+  if (!$br('Z_05:3060', mode !== 0x09)) {
     // In a cellar: leave when Y < $40 and going up.
-    if (ram[ObjY] >= 0x40) return; // L14EC6_Exit
-    if (!(ram[ObjInputDir] & 0x08)) return;
+    if ($br('Z_05:3067', ram[ObjY] >= 0x40)) return; // L14EC6_Exit
+    if ($br('Z_05:3070', !(ram[ObjInputDir] & 0x08))) return;
     // Look for this room's ID in the 6-element cellar room array (the index is not used).
     const room = ram[RoomId]; // PHA
     let y = 0x06;
     do {
       y = (y - 1) & 0xff;
-    } while (room !== peek(LevelInfo_CellarRoomIdArray + y));
+      $pxa('Z_05:3078', LevelInfo_CellarRoomIdArray, y);
+    } while ($br('Z_05:3079', room !== peek(LevelInfo_CellarRoomIdArray + y)));
     // Destination: attributes A if Link's X < $80, else B.
     y = room;
-    const dest = ram[ObjX] >= 0x80 ? peek(LevelBlockAttrsB + y) : peek(LevelBlockAttrsA + y);
+    let dest;
+    if ($br('Z_05:3090', ram[ObjX] >= 0x80)) { $pxa('Z_05:3095', LevelBlockAttrsB, y); dest = peek(LevelBlockAttrsB + y); }
+    else { $pxa('Z_05:3091', LevelBlockAttrsA, y); dest = peek(LevelBlockAttrsA + y); }
     GoToModeAFromCellar(dest);
     // Link's position in the destination room, from the cellar's attributes C.
+    $pxa('Z_05:3102', LevelBlockAttrsC, room);
     const c = peek(LevelBlockAttrsC + room); // PLA / TAY
     ram[ObjX] = c & 0xf0;
     ram[ObjY] = ((c << 4) & 0xff) | 0x0d;
@@ -122,25 +134,27 @@ export function CheckSubroom() {
 
   // @InCave: is a person blocking the upper half of the room?
   CheckPersonBlocking();
-  if (mode !== 0x0c) return CheckCaveEdge();
+  if ($br('Z_05:3125', mode !== 0x0c)) return CheckCaveEdge();
   // Shortcut cave (mode $C).
-  if (ram[ObjGridOffset] !== 0) return; // L14F72_Exit
-  if (ram[ObjY] !== 0x9d) return CheckCaveEdge();
+  if ($br('Z_05:3131', ram[ObjGridOffset] !== 0)) return; // L14F72_Exit
+  if ($br('Z_05:3136', ram[ObjY] !== 0x9d)) return CheckCaveEdge();
   // On one of the 3 shortcut stairs? X = $50: 1, $80: 2, $B0: 3.
   let y;
   const x = ram[ObjX];
-  if (x === 0x50) y = 1;
-  else if (x === 0x80) y = 2;
-  else if (x === 0xb0) y = 3;
+  if ($br('Z_05:3147', x === 0x50)) y = 1;
+  else if ($br('Z_05:3150', x === 0x80)) y = 2;
+  else if (!$br('Z_05:3153', x !== 0xb0)) y = 3;
   else return;
   ram[0x00] = y;
   const room = ram[RoomId];
   y = 0xff;
   do {
     y = (y + 1) & 0xff;
-  } while (room !== peek(LevelInfo_CellarRoomIdArray + y));
+    $pxa('Z_05:3161', LevelInfo_CellarRoomIdArray, y);
+  } while ($br('Z_05:3162', room !== peek(LevelInfo_CellarRoomIdArray + y)));
   // One of the three shortcut rooms after the current one, wrapping around.
   y = ((y + ram[0x00]) & 0xff) & 0x03;
+  $pxa('Z_05:3176', LevelInfo_CellarRoomIdArray, y);
   return GoToModeAFromCellar(peek(LevelInfo_CellarRoomIdArray + y));
 }
 
@@ -175,5 +189,5 @@ export function EndPrepareMode() {
 /** CheckCaveEdge (Z_05, part of CheckSubroom): touching the screen edge leaves the cave (mode $A). */
 function CheckCaveEdge() {
   CheckScreenEdge();
-  if (ram[IsUpdatingMode] === 0) return GoToModeAFromCave();
+  if ($br('Z_05:3208', ram[IsUpdatingMode] === 0)) return GoToModeAFromCave();
 }

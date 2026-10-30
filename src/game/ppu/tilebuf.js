@@ -7,13 +7,14 @@ import { ram, cpu, word } from '../../core/ram.js';
 import { bus, read, write } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import { TileBufSelector, SwitchNameTablesReq, DynTileBufLen, DynTileBuf, CurPpuControl_2000 } from '../../core/vars.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 export function TransferCurTileBuf() {
   // TransferCurTileBuf (Z_06)
   let x = ram[TileBufSelector];
   const addrs = table(bus.rom, 'TransferBufAddrs');
   ram[0x00] = addrs.byte(x);
-  ram[0x01] = addrs.byte(x + 1);
+  $pxa('Z_06:561', addrs.addr + 1, x); ram[0x01] = addrs.byte(x + 1);
   TransferTileBuf();
   ram[0x0300] = 0x3f; // UNKNOWN in the original: [$0300] is only ever written
   x = 0x00;
@@ -34,8 +35,9 @@ export function TransferTileBuf() {
   for (;;) {
     read(0x2002); // LDX PpuStatus_2002
     let y = 0;
+    $pxa('Z_06:651', ram[0x00], 0);
     const hi = read(word(0x00)); // high byte of VRAM address
-    if (hi & 0x80) return hi; // end when we read a negative VRAM address
+    if (!$br('Z_06:652', (hi & 0x80) === 0)) return hi; // end when we read a negative VRAM address
     y = ContinueTransferTileBuf(hi);
     // @AdvanceSource: [$00:01] += Y + 1 (SEC / TYA / ADC $00)
     cpu.c = 1;
@@ -51,36 +53,36 @@ function ContinueTransferTileBuf(a) {
   const pushedHi = a; // PHA
   write(0x2006, a);
   let y = 1;
-  write(0x2006, read((ptr + y) & 0xffff)); // low byte of VRAM address
+  $pxa('Z_06:585', ptr, y); write(0x2006, read((ptr + y) & 0xffff)); // low byte of VRAM address
   y = 2;
-  a = read((ptr + y) & 0xffff); // count and attribute byte
+  $pxa('Z_06:588', ptr, y); a = read((ptr + y) & 0xffff); // count and attribute byte
   const vertical = a & 0x80; // ASL -> C
   a = (a << 1) & 0xff;
   const pushedCtl = a; // PHA
   let ctl = ram[CurPpuControl_2000] | 0x04;
-  if (!vertical) ctl &= 0xfb;
+  if (!$br('Z_06:593', vertical !== 0)) ctl &= 0xfb;
   write(0x2000, ctl);
   ram[CurPpuControl_2000] = ctl;
   a = pushedCtl; // PLA
   const repeat = a & 0x80; // ASL -> C (bit 6 of ctl)
   a = (a << 1) & 0xff;
   const zero = a === 0; // PHP saves Z of the ASL result
-  if (repeat) {
+  if (!$br('Z_06:601', !repeat)) {
     a |= 0x02;
     y++; // point to the byte to repeat
   }
   // PLP / CLC / BNE / SEC / ROR / LSR: count in A (0 => 64), C = repeat flag
-  a = (a >> 1) | (zero ? 0x80 : 0);
+  a = (a >> 1) | ($br('Z_06:610', !zero) ? 0 : 0x80);
   a >>= 1;
   let x = a;
   do {
-    if (!repeat) y++;
-    write(0x2007, read((ptr + y) & 0xffff));
+    if (!$br('Z_06:621', !!repeat)) y++;
+    $pxa('Z_06:624', ptr, y); write(0x2007, read((ptr + y) & 0xffff));
     x = (x - 1) & 0xff;
-  } while (x !== 0);
+  } while ($br('Z_06:627', x !== 0));
   cpu.c = repeat ? 1 : 0;
   a = pushedHi; // PLA
-  if (a === 0x3f) { // wrote to $3Fxx: set PPUADDR to $3F00, then $0000
+  if (!$br('Z_06:632', a !== 0x3f)) { // wrote to $3Fxx: set PPUADDR to $3F00, then $0000
     write(0x2006, a);
     write(0x2006, x);
     write(0x2006, x);

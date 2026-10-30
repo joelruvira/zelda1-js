@@ -15,6 +15,7 @@ import {
 } from '../../core/vars.js';
 import { GetRoomFlagUWItemState } from '../items/roomitem.js';
 import { ChangeTileObjTiles } from './tilemap.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 const regA = (r) => (typeof r === 'object' && r !== null ? r.a : r);
 
@@ -22,11 +23,11 @@ const regA = (r) => (typeof r === 'object' && r !== null ? r.a : r);
 export function CheckUnderworldSecrets() {
   // CheckUnderworldSecrets (Z_05)
   CheckHasLivingMonsters();
-  if ((ram[LevelBlockAttrsByteF] & 0x07) === 0) return CheckSecretTriggerNone();
-  if (!CheckSecretTrigger(ram[LevelBlockAttrsByteF] & 0x07)) return CheckSecretTriggerNone();
-  if ((ram[LevelBlockAttrsByteF] & 0x07) !== 0x07) return CheckSecretTriggerNone();
-  if (ram[ObjState + 19] === 0) return CheckSecretTriggerNone();
-  if ((regA(GetRoomFlagUWItemState()) & 0xff) !== 0) return CheckSecretTriggerNone();
+  if ($br('Z_05:2343', (ram[LevelBlockAttrsByteF] & 0x07) === 0)) return CheckSecretTriggerNone();
+  if ($br('Z_05:2347', !CheckSecretTrigger(ram[LevelBlockAttrsByteF] & 0x07))) return CheckSecretTriggerNone();
+  if ($br('Z_05:2353', (ram[LevelBlockAttrsByteF] & 0x07) !== 0x07)) return CheckSecretTriggerNone();
+  if ($br('Z_05:2358', ram[ObjState + 19] === 0)) return CheckSecretTriggerNone();
+  if ($br('Z_05:2360', (regA(GetRoomFlagUWItemState()) & 0xff) !== 0)) return CheckSecretTriggerNone();
   ram[ObjState + 19] = 0x00; // activate the room item
   ram[Tune1Request] = 0x02; // "item appears" tune
   return CheckSecretTriggerNone(); // falls through
@@ -57,13 +58,14 @@ export function CheckHasLivingMonsters() {
   // CheckHasLivingMonsters (Z_05)
   let y = ram[CurObjIndex];
   do {
+    $pxa('Z_05:2396', ObjType + 1, y);
     const t = ram[ObjType + 1 + y];
-    if (t !== 0) {
-      if (t < 0x2b) return; // @Exit
-      if (t >= 0x2e && t < 0x49) return; // @Exit
+    if (!$br('Z_05:2397', t === 0)) {
+      if ($br('Z_05:2399', t < 0x2b)) return; // @Exit
+      if (!$br('Z_05:2401', t < 0x2e) && $br('Z_05:2403', t < 0x49)) return; // @Exit
     }
     y = (y - 1) & 0xff; // @Next
-  } while (!(y & 0x80));
+  } while ($br('Z_05:2407', !(y & 0x80)));
   ram[LinkParalyzed] = 0x00;
   ram[RoomAllDead]++;
 }
@@ -71,7 +73,7 @@ export function CheckHasLivingMonsters() {
 /** CheckSecretTriggerAllDead (Z_05): with no monsters left (RoomAllDead), trigger the shutters. */
 export function CheckSecretTriggerAllDead() {
   // CheckSecretTriggerAllDead (Z_05)
-  if (ram[RoomAllDead] === 0) return ReturnFalse();
+  if ($br('Z_05:2418', ram[RoomAllDead] === 0)) return ReturnFalse();
   return TriggerShutters(); // falls through
 }
 
@@ -92,16 +94,18 @@ function ReturnFalse() {
 export function CheckSecretTriggerRingleader() {
   // CheckSecretTriggerRingleader (Z_05)
   const first = ram[ObjType + 1];
-  if (first !== 0 && first < 0x53) return ReturnFalse();
+  if (!$br('Z_05:2434', first === 0) && $br('Z_05:2439', first < 0x53)) return ReturnFalse();
   // @KillMonsters
   let y = ram[CurObjIndex];
   do {
+    $pxa('Z_05:2449', ObjType + 1, y);
     const t = ram[ObjType + 1 + y];
-    if (t !== 0 && t < 0x53 && ram[ObjMetastate + 1 + y] === 0) {
-      ram[ObjMetastate + 1 + y] = 0x10; // die
+    if (!$br('Z_05:2450', t === 0) && !$br('Z_05:2452', t >= 0x53)) {
+      $pxa('Z_05:2453', ObjMetastate + 1, y);
+      if (!$br('Z_05:2454', ram[ObjMetastate + 1 + y] !== 0)) ram[ObjMetastate + 1 + y] = 0x10; // die
     }
     y = (y - 1) & 0xff; // @Next
-  } while (!(y & 0x80));
+  } while ($br('Z_05:2462', !(y & 0x80)));
   cpu.c = 1;
   return true;
 }
@@ -109,7 +113,8 @@ export function CheckSecretTriggerRingleader() {
 /** CheckSecretTriggerBlockDoor (Z_05): a pushed block triggers the shutters. */
 export function CheckSecretTriggerBlockDoor() {
   // CheckSecretTriggerBlockDoor (Z_05)
-  if (ram[BlockPushComplete] === 0) return ReturnFalse();
+  if ($br('Z_05:2471', ram[BlockPushComplete] === 0)) return ReturnFalse();
+  $br('Z_05:2474', true);
   return TriggerShutters();
 }
 
@@ -117,8 +122,8 @@ export function CheckSecretTriggerBlockDoor() {
 export function CheckSecretTriggerBlockStairs() {
   // CheckSecretTriggerBlockStairs (Z_05)
   const a = ram[BlockPushComplete];
-  if (a === 0) return ReturnFalse();
-  if ((a & 0x01) === 0) return ReturnFalse(); // LSR / BCC: already handled (2)
+  if ($br('Z_05:2479', a === 0)) return ReturnFalse();
+  if ($br('Z_05:2484', (a & 0x01) === 0)) return ReturnFalse(); // LSR / BCC: already handled (2)
   ram[BlockPushComplete]++;
   const x = 0x0b; // tile object slot
   ram[ObjX + x] = 0xd0;
@@ -131,7 +136,7 @@ export function CheckSecretTriggerBlockStairs() {
 /** CheckSecretTriggerLastBoss (Z_05): the last boss defeated triggers the shutters. */
 export function CheckSecretTriggerLastBoss() {
   // CheckSecretTriggerLastBoss (Z_05)
-  if (ram[LastBossDefeated] !== 0) return TriggerShutters();
+  if ($br('Z_05:2507', ram[LastBossDefeated] !== 0)) return TriggerShutters();
   cpu.c = 0;
   return false;
 }
@@ -139,7 +144,7 @@ export function CheckSecretTriggerLastBoss() {
 /** CheckSecretTriggerMoneyOrLife (Z_05): the money-or-life man gone triggers the shutters. */
 export function CheckSecretTriggerMoneyOrLife() {
   // CheckSecretTriggerMoneyOrLife (Z_05)
-  if (ram[ObjType + 1] === 0) return TriggerShutters();
+  if ($br('Z_05:2517', ram[ObjType + 1] === 0)) return TriggerShutters();
   cpu.c = 0;
   return false;
 }

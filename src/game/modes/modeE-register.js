@@ -19,6 +19,7 @@ import { TurnOffAllVideo, TurnOffVideoAndClearArtifacts } from '../boot.js';
 import { FetchFileBAddressSet, FormatFileB, CalculateAndStoreFileBChecksumUncommitted } from '../save/files.js';
 import { Mode1_WriteLinkSprites } from './mode1-fileselect.js';
 import { UpdateModeDSave_Sub2 } from './modeD-save.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 // UpdateModeERegister names these bytes by address in the asm (they alias other mode-$E state).
 const SaveSlotNameIndex = 0x0423; // [$0423]
@@ -32,68 +33,81 @@ export function InitModeEandF_Full() {
   ModeE_ResetVariables(0x00);
   TurnOffAllVideo();
   const sub = ram[GameSubmode];
-  if (sub === 0x00) {
+  if (!$br('Z_02:1461', sub !== 0x00)) {
     TurnOffVideoAndClearArtifacts();
-    do {
+    for (;;) {
       // @FormatSlotsB
       FetchFileBAddressSet();
       FormatFileB();
       ram[CurSaveSlot]++;
-    } while (ram[CurSaveSlot] !== 0x03);
+      if (!$br('Z_02:1473', ram[CurSaveSlot] !== 0x03)) break;
+    }
     ram[CurSaveSlot] = 0x00;
     const title = table(bus.rom, 'ModeFTitleTransferBuf');
-    for (let x = 0x1c; x >= 0; x--) ram[DynTileBuf + x] = title.byte(x);
-    if (ram[GameMode] === 0x0e) {
+    for (let x = 0x1c; ;) { $pxa('Z_02:1479', title.addr, x); ram[DynTileBuf + x] = title.byte(x); x--; if (!$br('Z_02:1482', x >= 0)) break; }
+    if (!$br('Z_02:1485', ram[GameMode] !== 0x0e)) {
       // Overwrite "ELIMINATION MODE" with "REGISTER YOUR NAME".
       const patch = table(bus.rom, 'ModeFTitlePatchRegister');
-      for (let y = 0x00; y !== 0x12; y++) ram[DynTileBuf + 7 + y] = patch.byte(y);
+      for (let y = 0x00; ;) { $pxa('Z_02:1489', patch.addr, y); ram[DynTileBuf + 7 + y] = patch.byte(y); y++; if (!$br('Z_02:1493', y !== 0x12)) break; }
     }
     return setTransferBufLenAndIncSubmode(0x1d);
   }
-  if (sub === 0x01) {
+  if (!$br('Z_02:1505', sub !== 0x01)) {
     const tmpl = table(bus.rom, 'ModeFSaveSlotTemplateTransferBuf');
-    for (let x = 0x33; x >= 0; x--) ram[DynTileBuf + x] = tmpl.byte(x);
+    for (let x = 0x33; ;) { $pxa('Z_02:1513', tmpl.addr, x); ram[DynTileBuf + x] = tmpl.byte(x); x--; if (!$br('Z_02:1516', x >= 0)) break; }
     let x = 0x00;
     let y = 0x00;
-    do {
+    for (;;) {
       // @OverwriteName: the names are all arranged one after another.
+      $pxa('Z_02:1521', Names, y);
       ram[DynTileBuf + 3 + x] = ram[Names + y];
       x++;
       y++;
-      if ((y & 0x07) === 0) x += 3; // skip the header of the next record
-    } while (x !== 0x21);
-    if (ram[GameMode] === 0x0e) {
+      if ($br('Z_02:1527', (y & 0x07) !== 0)) continue;
+      x += 3; // skip the header of the next record
+      if (!$br('Z_02:1532', x !== 0x21)) break;
+    }
+    if (!$br('Z_02:1535', ram[GameMode] !== 0x0e)) {
       // Overwrite "ELIMINATION" with "REGISTER".
       const patch = table(bus.rom, 'ModeFSaveSlotTemplatePatchRegister');
-      for (y = 0x00; y !== 0x0b; y++, x++) ram[DynTileBuf + 3 + x] = patch.byte(y);
+      for (y = 0x00; ;) {
+        $pxa('Z_02:1539', patch.addr, y);
+        ram[DynTileBuf + 3 + x] = patch.byte(y);
+        y++; x++;
+        if (!$br('Z_02:1544', y !== 0x0b)) break;
+      }
     }
+    $br('Z_02:1548', true); // LDA #$34 / BNE
     return setTransferBufLenAndIncSubmode(0x34);
   }
-  if (sub === 0x02) {
+  if (!$br('Z_02:1552', sub !== 0x02)) {
     return selectMenuBuf(0x16); // cue ModeFCharBoardTransferBuf
   }
-  if (sub === 0x03) {
+  if (!$br('Z_02:1567', sub !== 0x03)) {
     // Cursor color: $15 in mode $E, $30 in mode $F (byte 1 of sprite palette row 3).
-    const a = ram[GameMode] === 0x0f ? 0x30 : 0x15;
+    const a = $br('Z_02:1571', ram[GameMode] !== 0x0f) ? 0x15 : 0x30;
     poke(label('MenuPalettesTransferBuf').addr + 32, a);
+    $br('Z_02:1578', true); // LDA #$12 / BNE
     return selectMenuBuf(0x12);
   }
   // Submode 4
-  if (ram[GameMode] !== 0x0f) {
+  if (!$br('Z_02:1584', ram[GameMode] === 0x0f)) {
     // Mode $E: look for the first inactive slot (CurSaveSlot = 3 if none).
     let x = 0x03;
     let y = 0xff;
     ram[CurSaveSlot] = y;
-    do {
+    for (;;) {
       y = (y + 1) & 0xff;
       ram[CurSaveSlot]++;
-      if (ram[IsSaveSlotActive + y] === 0) break;
+      $pxa('Z_02:1592', IsSaveSlotActive, y);
+      if ($br('Z_02:1593', ram[IsSaveSlotActive + y] === 0)) break;
       x = (x - 1) & 0xff;
-    } while (!(x & 0x80));
+      if (!$br('Z_02:1595', !(x & 0x80))) break;
+    }
   }
   // @FoundInactiveSlot
   ModeEandF_SetUpCursorSprites();
-  if (ram[CurSaveSlot] === 0x03) ram[Sprites + 8] = 0xf8; // "End": hide the char-board cursor
+  if (!$br('Z_02:1601', ram[CurSaveSlot] !== 0x03)) ram[Sprites + 8] = 0xf8; // "End": hide the char-board cursor
   ram[0x00] = 0x50; // X of Link objects
   ram[0x01] = 0x30; // base Y of Link objects
   ram[IsUpdatingMode]++;
@@ -115,9 +129,9 @@ function selectMenuBuf(a) {
 /** UpdateModeERegister (Z_02) */
 export function UpdateModeERegister() {
   // UpdateModeERegister (Z_02)
-  if (!(ram[ButtonsPressed] & 0x10) || ram[CurSaveSlot] !== 0x03) {
+  if ($br('Z_02:1618', !(ram[ButtonsPressed] & 0x10)) || !$br('Z_02:1621', ram[CurSaveSlot] === 0x03)) {
     // @Idle
-    if (ram[CurSaveSlot] !== 0x03) ModeE_HandleDirections();
+    if (!$br('Z_02:1739', ram[CurSaveSlot] === 0x03)) ModeE_HandleDirections();
     UpdateModeEandF_Idle();
     ModeEandF_WriteNameCursorSpritePosition();
     ModeEandF_WriteCharBoardCursorSpritePosition();
@@ -131,7 +145,7 @@ export function UpdateModeERegister() {
   let x = 0x00; // the current slot number
   const sumsB = label('FileBChecksums').addr;
   const zelda = table(bus.rom, 'ZeldaString');
-  do {
+  for (;;) {
     // @LoopSaveSlot
     let y = ram[CurSaveSlot];
     poke(IsSaveFileBCommitted + y, 0xff); // mark file B committed
@@ -143,13 +157,14 @@ export function UpdateModeERegister() {
     const slot = x; // PHA
     FetchFileBAddressSet();
     x = slot; // PLA
-    do {
+    for (;;) {
       // @CopyName
       y = ram[SaveSlotNameIndex];
+      $pxa('Z_02:1657', Names, y);
       const ch = ram[Names + y];
       y = ram[SaveFileNameIndex];
       poke(word(0xc4) + y, ch);
-      if (ch !== 0x24 && ram[IsSaveSlotActive + x] === 0) {
+      if (!$br('Z_02:1661', ch === 0x24) && ($pxa('Z_02:1662', IsSaveSlotActive, x), !$br('Z_02:1663', ram[IsSaveSlotActive + x] !== 0))) {
         // The save slot is not active: 3 heart containers and 2 hearts, partial full, 8 bombs.
         poke(word(0xc0) + 0x18, 0x22);
         poke(word(0xc0) + 0x19, 0xff);
@@ -157,8 +172,12 @@ export function UpdateModeERegister() {
         const saved = x; // PHA
         y = (x << 3) & 0xff; // offset of the name in save slot info
         let match = true;
-        for (x = 0x00; x < 0x05; x++, y++) {
-          if (ram[Names + y] !== zelda.byte(x)) { match = false; break; }
+        for (x = 0x00; ;) {
+          $pxa('Z_02:1686', Names, y);
+          $pxa('Z_02:1687', zelda.addr, x);
+          if ($br('Z_02:1688', ram[Names + y] !== zelda.byte(x))) { match = false; break; }
+          y = (y + 1) & 0xff; x++;
+          if (!$br('Z_02:1692', x < 0x05)) break;
         }
         if (match) {
           x = saved; // PLA / PHA / TAX
@@ -171,12 +190,14 @@ export function UpdateModeERegister() {
       // @NextChar
       ram[SaveSlotNameIndex]++;
       ram[SaveFileNameIndex]++;
-    } while (ram[SaveFileNameIndex] !== 0x08);
+      if (!$br('Z_02:1713', ram[SaveFileNameIndex] !== 0x08)) break;
+    }
     x = (x + 1) & 0xff;
     ram[SaveFileNameIndex] = 0x00;
-    if (ram[FileBReadyToSave] !== 0) CalculateAndStoreFileBChecksumUncommitted();
+    if (!$br('Z_02:1718', ram[FileBReadyToSave] === 0)) CalculateAndStoreFileBChecksumUncommitted();
     ram[CurSaveSlot]++;
-  } while (ram[CurSaveSlot] !== 0x03);
+    if ($br('Z_02:1724', ram[CurSaveSlot] === 0x03)) break;
+  }
   ram[FileBReadyToSave] = 0x00;
   ram[CurSaveSlot] = 0x00;
   ModeE_ResetVariables(0x00);
@@ -197,7 +218,7 @@ export function ModeE_ResetVariables(a) {
 export function ModeE_HandleDirections() {
   // ModeE_HandleDirections (Z_02)
   const a = ram[ButtonsDown] & 0x0f;
-  if (a !== 0) return ModeE_HandleDirectionButton(a);
+  if ($br('Z_02:1801', a !== 0)) return ModeE_HandleDirectionButton(a);
   return ResetButtonRepeatState(a); // falls through
 }
 
@@ -214,49 +235,49 @@ export function ResetButtonRepeatState(a) {
 export function ModeE_HandleDirectionButton(a) {
   // ModeE_HandleDirectionButton (Z_02)
   let y = a; // TAY
-  if (ram[StillHoldingButton] === 0) {
+  if (!$br('Z_02:1812', ram[StillHoldingButton] !== 0)) {
     ram[HeldButton] = y;
     ram[StillHoldingButton]++;
   }
   // @CheckSameButton
-  if ((ram[ButtonsDown] & 0x0f) !== ram[HeldButton]) ResetButtonRepeatState(0x00);
+  if (!$br('Z_02:1820', (ram[ButtonsDown] & 0x0f) === ram[HeldButton])) ResetButtonRepeatState(0x00);
   // @CheckRepeat
-  if (ram[ButtonRepeatTimer] !== 0) {
+  if (!$br('Z_02:1826', ram[ButtonRepeatTimer] === 0)) {
     ram[ButtonRepeatTimer]--;
     return;
   }
   // @ChooseRepeatDelay: $10 frames for the first repeat, then 8.
-  y = ram[SubsequentButtonRepeat] !== 0 ? 0x08 : 0x10;
+  y = $br('Z_02:1835', ram[SubsequentButtonRepeat] !== 0) ? 0x08 : 0x10;
   ram[ButtonRepeatTimer] = y;
   a = ram[ButtonsDown] & 0x0f;
-  if (a === 0x01) {
+  if (!$br('Z_02:1842', a !== 0x01)) {
     // Right
     ram[CharBoardIndex]++;
     ram[ObjX + 1] = (ram[ObjX + 1] + 0x10) & 0xff;
-    if (ram[ObjX + 1] === 0xe0) {
+    if (!$br('Z_02:1853', ram[ObjX + 1] !== 0xe0)) {
       ram[ObjX + 1] = 0x30;
       CycleCharBoardCursorY(0x00);
-      if (ram[ModeE_WrappedAroundBoardY] !== 0) ram[CharBoardIndex] = 0x00;
+      if (!$br('Z_02:1859', ram[ModeE_WrappedAroundBoardY] === 0)) ram[CharBoardIndex] = 0x00;
     }
-  } else if (a === 0x02) {
+  } else if (!$br('Z_02:1867', a !== 0x02)) {
     // Left
     ram[CharBoardIndex]--;
     ram[ObjX + 1] = (ram[ObjX + 1] - 0x10) & 0xff;
-    if (ram[ObjX + 1] === 0x20) {
+    if (!$br('Z_02:1878', ram[ObjX + 1] !== 0x20)) {
       ram[ObjX + 1] = 0xd0;
       CycleCharBoardCursorY(0x03);
-      if (ram[ModeE_WrappedAroundBoardY] !== 0) ram[CharBoardIndex] = 0x2b;
+      if (!$br('Z_02:1884', ram[ModeE_WrappedAroundBoardY] === 0)) ram[CharBoardIndex] = 0x2b;
     }
-  } else if (a === 0x04) {
+  } else if (!$br('Z_02:1892', a !== 0x04)) {
     // Down: one row ($B characters) down
     ram[CharBoardIndex] = (ram[CharBoardIndex] + 0x0b) & 0xff;
     CycleCharBoardCursorY(0x00);
-    if (ram[ModeE_WrappedAroundBoardY] !== 0) ram[CharBoardIndex] = (ram[CharBoardIndex] - 0x2c) & 0xff;
-  } else if (a === 0x08) {
+    if (!$br('Z_02:1904', ram[ModeE_WrappedAroundBoardY] === 0)) ram[CharBoardIndex] = (ram[CharBoardIndex] - 0x2c) & 0xff;
+  } else if (!$br('Z_02:1915', a !== 0x08)) {
     // Up
     ram[CharBoardIndex] = (ram[CharBoardIndex] - 0x0b) & 0xff;
     CycleCharBoardCursorY(0x03);
-    if (ram[ModeE_WrappedAroundBoardY] !== 0) ram[CharBoardIndex] = (ram[CharBoardIndex] + 0x2c) & 0xff;
+    if (!$br('Z_02:1927', ram[ModeE_WrappedAroundBoardY] === 0)) ram[CharBoardIndex] = (ram[CharBoardIndex] + 0x2c) & 0xff;
   } else {
     return; // @Exit: no single direction
   }
@@ -273,11 +294,14 @@ export function CycleCharBoardCursorY(x) {
   // CycleCharBoardCursorY (Z_02)
   const t = table(bus.rom, 'ModeE_CharBoardYOffsetsAndBounds');
   let y = 0x00;
+  $pxa('Z_02:1952', t.addr, x);
   const a = (ram[ObjY + 1] + t.byte(x)) & 0xff;
   ram[ObjY + 1] = a;
   x++;
-  if (a === t.byte(x)) {
+  $pxa('Z_02:1955', t.addr, x);
+  if (!$br('Z_02:1956', a !== t.byte(x))) {
     x++;
+    $pxa('Z_02:1958', t.addr, x);
     ram[ObjY + 1] = t.byte(x);
     y++;
   }
@@ -293,25 +317,40 @@ export function LA10A_Exit() {
 /** ModeE_HandleAOrB (Z_02): A writes the highlighted character, A or B advance the name cursor. */
 export function ModeE_HandleAOrB() {
   // ModeE_HandleAOrB (Z_02)
-  if (ram[InitializedNameField] === 0) {
+  if (!$br('Z_02:1973', ram[InitializedNameField] !== 0)) {
     let y = ram[CurSaveSlot];
-    if (y === 0x03) return LA10A_Exit(); // "End" option
-    ram[NameCharOffset] = table(bus.rom, 'SlotToNameOffset').byte(y);
-    let x = table(bus.rom, 'SlotToInitialNameCharTransferHeaderEndOffsets').byte(y);
+    if ($br('Z_02:1976', y === 0x03)) return LA10A_Exit(); // "End" option
+    const nameOffs = table(bus.rom, 'SlotToNameOffset');
+    $pxa('Z_02:1980', nameOffs.addr, y);
+    ram[NameCharOffset] = nameOffs.byte(y);
+    const ends = table(bus.rom, 'SlotToInitialNameCharTransferHeaderEndOffsets');
+    $pxa('Z_02:1985', ends.addr, y);
+    let x = ends.byte(y);
     const headers = table(bus.rom, 'SlotToInitialNameCharTransferHeaders');
-    for (y = 0x02; y >= 0; y--, x--) ram[NameInputCharBuf + y] = headers.byte(x);
+    for (y = 0x02; ;) {
+      $pxa('Z_02:1989', headers.addr, x);
+      ram[NameInputCharBuf + y] = headers.byte(x);
+      x = (x - 1) & 0xff; y--;
+      if (!$br('Z_02:1993', y >= 0)) break;
+    }
     ram[InitializedNameField]++;
   }
   // @CheckAB
   const a = ram[ButtonsPressed] & 0xc0;
-  if (a !== 0) {
-    if (a === 0x80) {
+  if (!$br('Z_02:2005', a === 0)) {
+    if (!$br('Z_02:2009', a !== 0x80)) {
       // A: click tune, then write the character.
       ram[Tune0Request] = 0x20;
-      for (let y = 0x02; y >= 0; y--) ram[DynTileBuf + y] = ram[NameInputCharBuf + y];
+      for (let y = 0x02; ;) {
+        $pxa('Z_02:2019', NameInputCharBuf, y);
+        ram[DynTileBuf + y] = ram[NameInputCharBuf + y];
+        y--; if (!$br('Z_02:2022', y >= 0)) break;
+      }
       ram[DynTileBuf + 4] = 0xff; // end marker (STY with Y = $FF)
       const x = ram[NameCharOffset];
-      const ch = table(bus.rom, 'ModeE_CharMap').byte(ram[CharBoardIndex]);
+      const cmap = table(bus.rom, 'ModeE_CharMap');
+      $pxa('Z_02:2026', cmap.addr, ram[CharBoardIndex]);
+      const ch = cmap.byte(ram[CharBoardIndex]);
       ram[DynTileBuf + 3] = ch;
       ram[Names + x] = ch;
     }
@@ -320,10 +359,12 @@ export function ModeE_HandleAOrB() {
     ram[NameCharOffset]++;
     ram[NameInputCharBuf + 1]++;
     // Name fields start at VRAM addresses ending in $E; a 6 means past the end of the field.
-    if ((ram[NameInputCharBuf + 1] & 0x0f) === 0x06) {
+    if (!$br('Z_02:2053', (ram[NameInputCharBuf + 1] & 0x0f) !== 0x06)) {
       ram[NameInputCharBuf + 1] = (ram[NameInputCharBuf + 1] - 0x08) & 0xff;
-      ram[NameCharOffset] = table(bus.rom, 'SlotToNameOffset').byte(ram[CurSaveSlot]);
-      if (ram[ObjX] === 0xb0) ram[ObjX] = 0x70;
+      const nameOffs = table(bus.rom, 'SlotToNameOffset');
+      $pxa('Z_02:2067', nameOffs.addr, ram[CurSaveSlot]);
+      ram[NameCharOffset] = nameOffs.byte(ram[CurSaveSlot]);
+      if (!$br('Z_02:2074', ram[ObjX] !== 0xb0)) ram[ObjX] = 0x70;
     }
   }
   // @Exit
@@ -334,11 +375,13 @@ export function ModeE_HandleAOrB() {
 export function ModeEandF_SetUpCursorSprites() {
   // ModeEandF_SetUpCursorSprites (Z_02): almost 3 sprite records (all but sprite 0's Y).
   const spr = table(bus.rom, 'ModeEandFCursorSprites');
-  for (let y = 0x0a; y >= 0; y--) ram[Sprites + 1 + y] = spr.byte(y);
-  const a = table(bus.rom, 'ModeEandFSlotCursorYs').byte(ram[CurSaveSlot]);
+  for (let y = 0x0a; ;) { $pxa('Z_02:2088', spr.addr, y); ram[Sprites + 1 + y] = spr.byte(y); y--; if (!$br('Z_02:2091', y >= 0)) break; }
+  const ys = table(bus.rom, 'ModeEandFSlotCursorYs');
+  $pxa('Z_02:2093', ys.addr, ram[CurSaveSlot]);
+  const a = ys.byte(ram[CurSaveSlot]);
   ram[ObjY] = a;
   ram[Sprites] = a;
-  if (ram[GameMode] === 0x0f) return;
+  if ($br('Z_02:2102', ram[GameMode] === 0x0f)) return;
   ram[Sprites + 1] = 0xf3; // heart tile for the slot cursor
   ram[Sprites + 4] = (ram[ObjY] - 0x08) & 0xff; // the block cursor's visible part is the bottom
   ram[ObjX] = 0x70; // base name cursor X
@@ -349,7 +392,7 @@ export function ModeEandF_SetUpCursorSprites() {
 /** ModeEandF_WriteNameCursorSpritePosition (Z_02) */
 export function ModeEandF_WriteNameCursorSpritePosition() {
   // ModeEandF_WriteNameCursorSpritePosition (Z_02)
-  if (ram[ObjY] === 0x77) {
+  if (!$br('Z_02:2126', ram[ObjY] !== 0x77)) {
     ram[Sprites + 4] = 0xf8; // "End": hide the name cursor
     return;
   }
@@ -367,7 +410,7 @@ export function ModeE_SetNameCursorSpriteX() {
 /** ModeEandF_WriteCharBoardCursorSpritePosition (Z_02) */
 export function ModeEandF_WriteCharBoardCursorSpritePosition() {
   // ModeEandF_WriteCharBoardCursorSpritePosition (Z_02)
-  if (ram[ObjY] === 0x77) {
+  if (!$br('Z_02:2144', ram[ObjY] !== 0x77)) {
     ram[Sprites + 8] = 0xf8;
     return;
   }
@@ -379,29 +422,30 @@ export function ModeEandF_WriteCharBoardCursorSpritePosition() {
 export function ModifyFlashingCursorY(a) {
   // ModifyFlashingCursorY (Z_02)
   let y = (a - 0x08) & 0xff;
-  if (!(ram[FrameCounter] & 0x08)) y = 0xf8;
+  if (!$br('Z_02:2174', (ram[FrameCounter] & 0x08) !== 0)) y = 0xf8;
   return y;
 }
 
 /** UpdateModeEandF_Idle (Z_02): Select moves to the next slot (in mode $E, skipping active ones). */
 export function UpdateModeEandF_Idle() {
   // UpdateModeEandF_Idle (Z_02)
-  if (!(ram[ButtonsPressed] & 0x20)) return;
+  if ($br('Z_02:2182', !(ram[ButtonsPressed] & 0x20))) return;
   const ys = table(bus.rom, 'ModeEandFSlotCursorYs');
   for (;;) {
     // @ChangeSelection
     ram[Tune1Request] = 0x01;
     ram[CurSaveSlot]++;
     let y = ram[CurSaveSlot];
-    if (y === 0x04) {
+    if (!$br('Z_02:2190', y !== 0x04)) {
       y = 0x00;
       ram[CurSaveSlot] = y;
     }
+    $pxa('Z_02:2194', ys.addr, y);
     ram[Sprites] = ys.byte(y);
-    if (ram[GameMode] === 0x0f) return;
+    if ($br('Z_02:2198', ram[GameMode] === 0x0f)) return;
     let a = (ram[ObjY] + 0x18) & 0xff; // move the name cursor down $18 pixels
     ram[ObjY] = a;
-    if (a === 0x8f) {
+    if (!$br('Z_02:2204', a !== 0x8f)) {
       a = 0x2f; // past "End": wrap around
       ram[ObjY] = a;
     }
@@ -411,7 +455,8 @@ export function UpdateModeEandF_Idle() {
     ram[InitializedNameField] = 0x00;
     ram[NameCharOffset] = 0x00;
     y = ram[CurSaveSlot];
-    if (y === 0x03) return;
-    if (ram[IsSaveSlotActive + y] === 0) return;
+    if ($br('Z_02:2217', y === 0x03)) return;
+    $pxa('Z_02:2218', IsSaveSlotActive, y);
+    if (!$br('Z_02:2219', ram[IsSaveSlotActive + y] !== 0)) return;
   }
 }

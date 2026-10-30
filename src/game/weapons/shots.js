@@ -4,7 +4,7 @@
 
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
 import {
   ObjState, ObjGridOffset, ObjDir, ObjX, ObjY, ObjType, ObjTimer, FrameCounter, InvBook, UsedCandle,
   CurLevel,
@@ -16,17 +16,21 @@ import { Anim_FetchObjPosForSpriteDescriptor } from '../draw/anim.js';
 import { MoveShot } from '../enemies/shots.js';
 import { WieldCandle } from './fire.js';
 import { ResetObjState } from './sword.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** UpdateSwordShotOrMagicShot (Z_07). X = $0E. Moves (or spreads) the shot and draws it. */
 export function UpdateSwordShotOrMagicShot(x) {
   // UpdateSwordShotOrMagicShot (Z_07)
   const a = ram[ObjState + x];
-  if (a === 0) return; // L1F36A_Exit
-  if (a & 0x01) return SpreadShot(x);
+  if ($br('Z_07:3459', a === 0)) return; // L1F36A_Exit
+  if (!$br('Z_07:3463', (a & 0x01) === 0)) return SpreadShot(x);
   // (LDA ObjGridOffset, X / BNE :+ / : is a no-op)
+  $pxa('Z_07:3467', ObjGridOffset, x);
+  $br('Z_07:3468', ram[ObjGridOffset + x] !== 0);
   MoveShot(ram[ObjDir + x], x);
-  if (ram[0x0f] === 0) return HandleShotBlocked(x);
-  if ((ram[ObjGridOffset + x] & 0x07) === 0) ram[ObjGridOffset + x] = 0x00;
+  if ($br('Z_07:3475', ram[0x0f] === 0)) return HandleShotBlocked(x);
+  $pxa('Z_07:3478', ObjGridOffset, x);
+  if (!$br('Z_07:3480', (ram[ObjGridOffset + x] & 0x07) !== 0)) ram[ObjGridOffset + x] = 0x00;
   return DrawSwordShotOrMagicShot(x); // falls through
 }
 
@@ -38,19 +42,25 @@ export function DrawSwordShotOrMagicShot(x) {
   // DrawSwordShotOrMagicShot (Z_07)
   Anim_FetchObjPosForSpriteDescriptor(x);
   const dir = ram[ObjDir + x]; // PHA
-  if (dir & 0x03) ram[0x01] = ram[0x01] + 0x03; // horizontal: 3 pixels down
+  if (!$br('Z_07:3491', (dir & 0x03) === 0)) ram[0x01] = ram[0x01] + 0x03; // horizontal: 3 pixels down
   // @Flash (PLA)
   let y = GetOppositeDir(dir).y;
+  $pxa('Z_07:3505', label('RDirectionToWeaponBaseAttribute').addr, y);
   Anim_SetSpriteDescriptorAttributes(
     (ram[FrameCounter] & 0x03) | table(bus.rom, 'RDirectionToWeaponBaseAttribute').byte(y));
+  $pxa('Z_07:3509', label('RDirectionToWeaponFrame').addr, y);
   ram[0x0c] = table(bus.rom, 'RDirectionToWeaponFrame').byte(y);
-  if (y === 0x02) ram[0x0f]++;
+  if (!$br('Z_07:3514', y !== 0x02)) ram[0x0f]++;
   y = 0x22;
-  if (x >= 0x0d) {
+  if ($br('Z_07:3522', x >= 0x0d)) {
     // @PlayerShot: magic shot when the state's high bit is set
-    if (ram[ObjState + x] & 0x80) y = 0x23;
-  } else if (ram[ObjType + x] !== 0x57) {
-    y = 0x23; // @WriteMagicSprites
+    if (!$br('Z_07:3534', (ram[ObjState + x] & 0x80) === 0)) y = 0x23;
+  } else {
+    $pxa('Z_07:3523', ObjType, x);
+    if (!$br('Z_07:3525', ram[ObjType + x] === 0x57)) {
+      $br('Z_07:3526', true);
+      y = 0x23; // @WriteMagicSprites
+    }
   }
   // @WriteSprites
   return Anim_WriteItemSprites(x, y);
@@ -62,9 +72,9 @@ export function DrawSwordShotOrMagicShot(x) {
  */
 export function HandleShotBlocked(x) {
   // HandleShotBlocked (Z_07)
-  if ((ram[ObjState + x] & 0x80) === 0) return SetShotSpreadingState(x);
+  if ($br('Z_07:3550', (ram[ObjState + x] & 0x80) === 0)) return SetShotSpreadingState(x);
   // Magic shot.
-  if (ram[InvBook] === 0) return DeactivateShot(x);
+  if ($br('Z_07:3556', ram[InvBook] === 0)) return DeactivateShot(x);
   // Make a fire with the candle unused; keep Link's state and UsedCandle.
   const linkState = ram[ObjState]; // PHA
   const usedCandle = ram[UsedCandle]; // PHA
@@ -72,11 +82,14 @@ export function HandleShotBlocked(x) {
   x = WieldCandle();
   ram[UsedCandle] = usedCandle; // PLA
   ram[ObjState] = linkState; // PLA
-  if (ram[ObjState + x] !== 0x21) return DeactivateLinkShot();
+  if ($br('Z_07:3584', ram[ObjState + x] !== 0x21)) return DeactivateLinkShot();
   ram[ObjState + x]++; // $22: standing fire
   const y = 0x0e;
+  $pxa('Z_07:3591', ObjX, y);
   ram[ObjX + x] = ram[ObjX + y];
+  $pxa('Z_07:3593', ObjY, y);
   ram[ObjY + x] = ram[ObjY + y];
+  $pxa('Z_07:3595', ObjDir, y);
   ram[ObjDir + x] = ram[ObjDir + y];
   ram[ObjTimer + x] = 0x4f;
   return DeactivateLinkShot(); // falls through
@@ -117,22 +130,23 @@ export function SpreadShot(x) {
     const index = y; // TYA / PHA
     const offX = ram[0x02]; // PHA
     const offY = ram[0x03]; // PHA
+    $pxa('Z_07:3660', baseAttr.addr, y);
     Anim_SetSpriteDescriptorAttributes((ram[FrameCounter] & 0x03) | baseAttr.byte(y));
     let a = (ram[ObjX + x] + ram[0x02]) & 0xff;
     ram[0x00] = a;
     let draw = true;
-    if (a >= ram[ObjX + x]) {
-      if (a >= 0xfc) draw = false;
+    if (!$br('Z_07:3673', a < ram[ObjX + x])) {
+      if ($br('Z_07:3675', a >= 0xfc)) draw = false;
       else a = (a - ram[ObjX + x]) & 0xff;
     } else {
       a = (ram[ObjX + x] - ram[0x00]) & 0xff; // @ReverseSub
     }
     // @CheckDistance
-    if (draw && a >= 0x20) draw = false;
+    if (draw && $br('Z_07:3688', a >= 0x20)) draw = false;
     if (draw) {
       a = (ram[ObjY + x] + ram[0x03]) & 0xff;
       ram[0x01] = a;
-      if (ram[CurLevel] !== 0 && (a < 0x3e || a >= 0xe8)) draw = false;
+      if (!$br('Z_07:3699', ram[CurLevel] === 0) && ($br('Z_07:3701', a < 0x3e) || $br('Z_07:3703', a >= 0xe8))) draw = false;
     }
     if (draw) {
       // @Draw: frame 2 (spread shot) of item slot $23
@@ -143,12 +157,12 @@ export function SpreadShot(x) {
     ram[0x03] = offY; // PLA
     ram[0x02] = offX; // PLA
     // Negate [03], [02], [03] in turns (index 0 negates [00]: "doesn't matter", but it is written).
-    y = index === 0x01 ? 0x03 : index;
+    y = !$br('Z_07:3731', index !== 0x01) ? 0x03 : index;
     ram[0x00 + y] = Negate(ram[0x00 + y]);
     y = index - 1;
-    if (y < 0) break;
+    if (!$br('Z_07:3744', y >= 0)) break;
   }
   ram[ObjDir + x]--;
-  if (ram[ObjDir + x] !== 0xe8) return; // L1F49F_Exit
+  if ($br('Z_07:3757', ram[ObjDir + x] !== 0xe8)) return; // L1F49F_Exit
   return DeactivateLinkShot();
 }

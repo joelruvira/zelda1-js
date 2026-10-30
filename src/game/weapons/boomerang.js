@@ -3,7 +3,7 @@
 
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
 import {
   InvBoomerang, InvMagicBoomerang, ObjState, ObjMovingLimit, ObjQSpeedFrac, ObjAnimCounter, ObjInputDir,
   ObjDir, ObjTimer, ObjX, ObjY, RoomObjTemplateType, ChaseTargetX, ChaseTargetY,
@@ -13,6 +13,7 @@ import { Anim_WriteStaticItemSpritesWithAttributes } from '../draw/items.js';
 import { PlaceWeaponForPlayerState, PlaceWeaponForPlayerStateAndAnimAndWeaponState } from './wield.js';
 import { UpdateArrowOrBoomerang } from './arrow.js';
 import { ResetObjState } from './sword.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * WieldBoomerang (Z_05): throws the boomerang (slot $0F, state $10) in the input direction (may be
@@ -20,18 +21,19 @@ import { ResetObjState } from './sword.js';
  */
 export function WieldBoomerang() {
   // WieldBoomerang (Z_05)
-  if ((ram[InvBoomerang] | ram[InvMagicBoomerang]) === 0) return; // L14E71_Exit
+  if ($br('Z_05:2905', (ram[InvBoomerang] | ram[InvMagicBoomerang]) === 0)) return; // L14E71_Exit
   const x = 0x0f;
   const a = ram[ObjState + x];
-  if (a !== 0 && (a & 0x80) === 0) return; // L14E71_Exit: in use (food has the high bit set)
+  if (!$br('Z_05:2912', a === 0) && $br('Z_05:2914', (a & 0x80) === 0)) return; // L14E71_Exit: in use (food has the high bit set)
   ram[ObjState + x] = 0x10;
+  $pxa('Z_05:2923', label('BoomerangLimits').addr, ram[InvMagicBoomerang]);
   ram[ObjMovingLimit + x] = table(bus.rom, 'BoomerangLimits').byte(ram[InvMagicBoomerang]);
   PlaceWeaponForPlayerState(x);
   ram[ObjQSpeedFrac + x] = 0xc0; // 3 pixels a frame
   ram[ObjAnimCounter + x] = 0x03; // the first turning frame lasts 3 frames
   ram[ObjAnimCounter] = 0x01;
   let d = ram[ObjInputDir];
-  if (d === 0) d = ram[ObjDir];
+  if (!$br('Z_05:2946', d !== 0)) d = ram[ObjDir];
   ram[ObjDir + x] = d;
 }
 
@@ -39,7 +41,7 @@ export function WieldBoomerang() {
 export function WieldFood() {
   // WieldFood (Z_05)
   const x = 0x0f;
-  if (ram[ObjState + x] !== 0) return; // L14EC6_Exit
+  if ($br('Z_05:3009', ram[ObjState + x] !== 0)) return; // L14EC6_Exit
   ram[ObjTimer + x] = 0xff;
   return PlaceWeaponForPlayerStateAndAnimAndWeaponState(0x80, x);
 }
@@ -51,17 +53,17 @@ export function WieldFood() {
 export function UpdateBoomerangOrFood(x) {
   // UpdateBoomerangOrFood (Z_07)
   let a = ram[ObjState + x];
-  if (a === 0) return; // L1F49F_Exit
-  if ((a & 0x80) === 0) return UpdateArrowOrBoomerang(x);
+  if ($br('Z_07:3766', a === 0)) return; // L1F49F_Exit
+  if ($br('Z_07:3770', (a & 0x80) === 0)) return UpdateArrowOrBoomerang(x);
   // Food.
-  if (ram[ObjTimer + x] === 0) {
+  if (!$br('Z_07:3780', ram[ObjTimer + x] !== 0)) {
     ram[ObjState + x]++;
-    if ((ram[ObjState + x] & 0x0f) === 0x03) return ResetObjState(x); // @Deactivate
+    if ($br('Z_07:3785', (ram[ObjState + x] & 0x0f) === 0x03)) return ResetObjState(x); // @Deactivate
     ram[ObjTimer + x] = 0xff;
   }
   // @CheckMonsterType: moblins..darknut-1, vire, keese chase the food.
   a = ram[RoomObjTemplateType];
-  if (a >= 0x03 && (a < 0x0b || a === 0x12 || a === 0x1b || a === 0x1c)) {
+  if (!$br('Z_07:3797', a < 0x03) && ($br('Z_07:3799', a < 0x0b) || $br('Z_07:3801', a === 0x12) || $br('Z_07:3803', a === 0x1b) || !$br('Z_07:3805', a !== 0x1c))) {
     // @AttractMonsters
     ram[ChaseTargetX] = ram[ObjX + x];
     ram[ChaseTargetY] = ram[ObjY + x];

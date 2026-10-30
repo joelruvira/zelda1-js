@@ -15,6 +15,34 @@ import {
   SaveFileOpenMarkers, SaveFileCloseMarkers, FileAChecksums, HeartValues,
   HeartPartial, Items, MaxBombs,
 } from '../../core/vars.js';
+import { $br, $pxa } from '../../core/timing.js';
+
+/** DEY / BPL loop from y0 down to 0: body(y), then one breadcrumb per iteration. */
+function downLoop(y0, ref, body) {
+  for (let y = y0; ;) {
+    body(y);
+    y = (y - 1) & 0xff;
+    if (!$br(ref, y < 0x80)) break;
+  }
+}
+
+/**
+ * The $180-byte world flag walk of the checksum/format routines: per byte body(), then
+ * INC lo / BNE / INC hi, DEC cnt / BNE, DEC cnt2 / BPL (refs: [carry, inner, outer]).
+ */
+function worldFlagsLoop(lo, cnt, body, refs) {
+  ram[cnt + 1] = 0x80; // [cnt+1] counts $80, [cnt] the extra block (= $180 in all)
+  ram[cnt] = 0x01;
+  for (;;) {
+    body();
+    ram[lo]++;
+    if (!$br(refs[0], ram[lo] !== 0)) ram[lo + 1]++;
+    ram[cnt + 1]--;
+    if ($br(refs[1], ram[cnt + 1] !== 0)) continue;
+    ram[cnt]--;
+    if (!$br(refs[2], ram[cnt] < 0x80)) break;
+  }
+}
 
 /** FileBChecksums lives inside RAM_01_CODE (SRAM $6D9C): a label, not a .inc variable. */
 function fileBChecksums() {
@@ -33,16 +61,20 @@ export function FetchFileAAddressSet() {
   // FetchFileAAddressSet (Z_01)
   let a = 0xff;
   let y = ram[CurSaveSlot];
-  do {
+  for (;;) {
     a = (a + 0x0e) & 0xff; // CLC / ADC #$0E
     y = (y - 1) & 0xff;
-  } while (!(y & 0x80));
+    if (!$br('Z_01:3070', y < 0x80)) break;
+  }
   y = a;
   // The table is read where the code runs: in the copy of BANK_01_CODE in SRAM.
   const sets = label('SaveFileAAddressSets').addr;
-  for (let x = 0x0d; x >= 0; x--) {
+  for (let x = 0x0d; ;) {
+    $pxa('Z_01:3077', sets, y);
     ram[0x00 + x] = peek(sets + y);
     y = (y - 1) & 0xff;
+    x--;
+    if (!$br('Z_01:3081', x >= 0)) break;
   }
   ram[0x0e] = WorldFlags & 0xff;
   ram[0x0f] = WorldFlags >> 8;
@@ -58,17 +90,20 @@ export function FetchFileBAddressSet() {
   // FetchFileBAddressSet (Z_02)
   let a = 0xff;
   let y = ram[CurSaveSlot];
-  do {
+  for (;;) {
     a = (a + 0x0e) & 0xff;
     y = (y - 1) & 0xff;
-  } while (!(y & 0x80));
+    if (!$br('Z_02:1381', y < 0x80)) break;
+  }
   y = a;
   const sets = table(bus.rom, 'SaveFileBAddressSets');
   let v = 0;
-  for (let x = 0x0d; x >= 0; x--) {
+  for (let x = 0x0d; ;) {
     v = sets.byte(y);
     ram[0xc0 + x] = v;
     y = (y - 1) & 0xff;
+    x--;
+    if (!$br('Z_02:1393', x >= 0)) break;
   }
   return v;
 }
@@ -80,21 +115,15 @@ export function CalculateFileAChecksum() {
   // CalculateFileAChecksum (Z_02)
   ram[0x0e] = 0x00;
   ram[0x0f] = 0x00;
-  for (let y = 0x07; y >= 0; y--) AddATo0F0E(peek(word(0x04) + y)); // name
-  for (let y = 0x27; y >= 0; y--) AddATo0F0E(peek(word(0x00) + y)); // Items block
-  ram[0x01] = 0x80; // will count $180 with [01:00]
-  ram[0x00] = 0x01;
-  // World flags ($180 bytes) at [$02:03]; Y stays 0.
-  do {
-    do {
-      AddATo0F0E(peek(word(0x02)));
-      if ((++ram[0x02] & 0xff) === 0) ram[0x03]++;
-    } while ((--ram[0x01] & 0xff) !== 0);
-    ram[0x00]--;
-  } while (!(ram[0x00] & 0x80));
-  AddATo0F0E(peek(word(0x06))); // IsSaveSlotActive
-  AddATo0F0E(peek(word(0x08))); // TODO byte
-  AddATo0F0E(peek(word(0x0a))); // DeathCount
+  downLoop(0x07, 'Z_02:2331', (y) => { $pxa('Z_02:2328', word(0x04), y); AddATo0F0E(peek(word(0x04) + y)); }); // name
+  downLoop(0x27, 'Z_02:2338', (y) => { $pxa('Z_02:2335', word(0x00), y); AddATo0F0E(peek(word(0x00) + y)); }); // Items block
+  // World flags ($180 bytes) at [$02:03], counted with [01:00]; Y stays 0.
+  worldFlagsLoop(0x02, 0x00, () => { $pxa('Z_02:2346', word(0x02), 0); AddATo0F0E(peek(word(0x02))); },
+    ['Z_02:2349', 'Z_02:2353', 'Z_02:2356']);
+  $pxa('Z_02:2357', word(0x06), 0); AddATo0F0E(peek(word(0x06))); // IsSaveSlotActive
+  $pxa('Z_02:2359', word(0x08), 0); AddATo0F0E(peek(word(0x08))); // TODO byte
+  $pxa('Z_02:2361', word(0x0a), 0); AddATo0F0E(peek(word(0x0a))); // DeathCount
+  $pxa('Z_02:2363', word(0x0c), 0);
   return AddATo0F0E(peek(word(0x0c))); // QuestNumber; falls through into AddATo0F0E
 }
 
@@ -110,17 +139,9 @@ export function AddATo0F0E(a) {
 /** FormatFileA (Z_02): reset file A of CurSaveSlot (pointers from FetchFileAAddressSet). */
 export function FormatFileA() {
   // FormatFileA (Z_02)
-  for (let y = 0x07; y >= 0; y--) poke(word(0x04) + y, 0x24); // name = 8 spaces
-  for (let y = 0x27; y >= 0; y--) poke(word(0x00) + y, 0x00); // Items block
-  ram[0x01] = 0x80;
-  ram[0x00] = 0x01;
-  do {
-    do {
-      poke(word(0x02), 0x00);
-      if ((++ram[0x02] & 0xff) === 0) ram[0x03]++;
-    } while ((--ram[0x01] & 0xff) !== 0);
-    ram[0x00]--;
-  } while (!(ram[0x00] & 0x80));
+  downLoop(0x07, 'Z_02:2381', (y) => poke(word(0x04) + y, 0x24)); // name = 8 spaces
+  downLoop(0x27, 'Z_02:2388', (y) => poke(word(0x00) + y, 0x00)); // Items block
+  worldFlagsLoop(0x02, 0x00, () => poke(word(0x02), 0x00), ['Z_02:2399', 'Z_02:2403', 'Z_02:2406']);
   poke(word(0x06), 0x00); // IsSaveSlotActive
   poke(word(0x08), 0x00); // TODO byte
   poke(word(0x0a), 0x00); // DeathCount
@@ -164,20 +185,15 @@ export function CalculateFileBChecksum() {
   // CalculateFileBChecksum (Z_02)
   ram[0xce] = 0x00;
   ram[0xcf] = 0x00;
-  for (let y = 0x07; y >= 0; y--) AddAToCFCE(peek(word(0xc4) + y)); // name
-  for (let y = 0x27; y >= 0; y--) AddAToCFCE(peek(word(0xc0) + y)); // Items block
-  ram[0xc1] = 0x80; // will count $180 with [C1:C0]
-  ram[0xc0] = 0x01;
-  do {
-    do {
-      AddAToCFCE(peek(word(0xc2)));
-      if ((++ram[0xc2] & 0xff) === 0) ram[0xc3]++;
-    } while ((--ram[0xc1] & 0xff) !== 0);
-    ram[0xc0]--;
-  } while (!(ram[0xc0] & 0x80));
-  AddAToCFCE(peek(word(0xc6))); // IsSaveSlotActive
-  AddAToCFCE(peek(word(0xc8))); // TODO byte
-  AddAToCFCE(peek(word(0xca))); // DeathCount
+  downLoop(0x07, 'Z_02:2468', (y) => { $pxa('Z_02:2465', word(0xc4), y); AddAToCFCE(peek(word(0xc4) + y)); }); // name
+  downLoop(0x27, 'Z_02:2475', (y) => { $pxa('Z_02:2472', word(0xc0), y); AddAToCFCE(peek(word(0xc0) + y)); }); // Items block
+  // World flags ($180 bytes), counted with [C1:C0].
+  worldFlagsLoop(0xc2, 0xc0, () => { $pxa('Z_02:2483', word(0xc2), 0); AddAToCFCE(peek(word(0xc2))); },
+    ['Z_02:2486', 'Z_02:2490', 'Z_02:2493']);
+  $pxa('Z_02:2494', word(0xc6), 0); AddAToCFCE(peek(word(0xc6))); // IsSaveSlotActive
+  $pxa('Z_02:2496', word(0xc8), 0); AddAToCFCE(peek(word(0xc8))); // TODO byte
+  $pxa('Z_02:2498', word(0xca), 0); AddAToCFCE(peek(word(0xca))); // DeathCount
+  $pxa('Z_02:2500', word(0xcc), 0);
   return AddAToCFCE(peek(word(0xcc))); // QuestNumber; falls through into AddAToCFCE
 }
 
@@ -193,17 +209,9 @@ export function AddAToCFCE(a) {
 /** FormatFileB (Z_02): clear file B of CurSaveSlot, leave its checksum in [$CF:CE], mark committed. */
 export function FormatFileB() {
   // FormatFileB (Z_02)
-  for (let y = 0x07; y >= 0; y--) poke(word(0xc4) + y, 0x24);
-  for (let y = 0x27; y >= 0; y--) poke(word(0xc0) + y, 0x00);
-  ram[0xc1] = 0x80;
-  ram[0xc0] = 0x01;
-  do {
-    do {
-      poke(word(0xc2), 0x00);
-      if ((++ram[0xc2] & 0xff) === 0) ram[0xc3]++;
-    } while ((--ram[0xc1] & 0xff) !== 0);
-    ram[0xc0]--;
-  } while (!(ram[0xc0] & 0x80));
+  downLoop(0x07, 'Z_02:2518', (y) => poke(word(0xc4) + y, 0x24));
+  downLoop(0x27, 'Z_02:2525', (y) => poke(word(0xc0) + y, 0x00));
+  worldFlagsLoop(0xc2, 0xc0, () => poke(word(0xc2), 0x00), ['Z_02:2536', 'Z_02:2540', 'Z_02:2543']);
   poke(word(0xc6), 0x00); // IsSaveSlotActive
   poke(word(0xc8), 0x00); // TODO byte
   poke(word(0xca), 0x00); // DeathCount
@@ -227,34 +235,40 @@ export function CopyFileBToFileA() {
   poke(FileAChecksums + y, 0x00);
   FetchFileBAddressSet();
   FetchFileAAddressSet(); // puts $067F in [$0E:0F]
-  for (y = 0x27; y >= 0; y--) poke(word(0x00) + y, peek(word(0xc0) + y)); // Items block
-  poke(word(0x06), peek(word(0xc6))); // IsSaveSlotActive
-  poke(word(0x08), peek(word(0xc8))); // TODO byte
-  poke(word(0x0a), peek(word(0xca))); // DeathCount
-  poke(word(0x0c), peek(word(0xcc))); // QuestNumber
-  const active = peek(word(0x06)); // PHA x3
-  const deaths = peek(word(0x0a));
-  const quest = peek(word(0x0c));
+  downLoop(0x27, 'Z_02:3068', (i) => { $pxa('Z_02:3065', word(0xc0), i); poke(word(0x00) + i, peek(word(0xc0) + i)); }); // Items block
+  $pxa('Z_02:3070', word(0xc6), 0); poke(word(0x06), peek(word(0xc6))); // IsSaveSlotActive
+  $pxa('Z_02:3072', word(0xc8), 0); poke(word(0x08), peek(word(0xc8))); // TODO byte
+  $pxa('Z_02:3074', word(0xca), 0); poke(word(0x0a), peek(word(0xca))); // DeathCount
+  $pxa('Z_02:3076', word(0xcc), 0); poke(word(0x0c), peek(word(0xcc))); // QuestNumber
+  $pxa('Z_02:3078', word(0x06), 0); const active = peek(word(0x06)); // PHA x3
+  $pxa('Z_02:3080', word(0x0a), 0); const deaths = peek(word(0x0a));
+  $pxa('Z_02:3082', word(0x0c), 0); const quest = peek(word(0x0c));
   y = ram[CurSaveSlot];
   ram[QuestNumbers + y] = quest;
   ram[DeathCounts + y] = deaths;
   ram[IsSaveSlotActive + y] = active;
-  for (y = 0x07; y >= 0; y--) poke(word(0x04) + y, peek(word(0xc4) + y)); // name
+  downLoop(0x07, 'Z_02:3097', (i) => { $pxa('Z_02:3094', word(0xc4), i); poke(word(0x04) + i, peek(word(0xc4) + i)); }); // name
   // World flags ($180 bytes): counts [$0E:0F] up from $067F to $07FF.
-  do {
+  for (;;) {
+    $pxa('Z_02:3104', word(0xc2), 0);
     poke(word(0x02), peek(word(0xc2)));
-    if ((++ram[0x02] & 0xff) === 0) ram[0x03]++;
-    if ((++ram[0xc2] & 0xff) === 0) ram[0xc3]++;
-    if ((++ram[0x0e] & 0xff) === 0) ram[0x0f]++;
-  } while (ram[0x0e] !== 0xff || ram[0x0f] !== 0x07);
+    ram[0x02]++;
+    if (!$br('Z_02:3107', ram[0x02] !== 0)) ram[0x03]++;
+    ram[0xc2]++;
+    if (!$br('Z_02:3111', ram[0xc2] !== 0)) ram[0xc3]++;
+    ram[0x0e]++;
+    if (!$br('Z_02:3115', ram[0x0e] !== 0)) ram[0x0f]++;
+    if ($br('Z_02:3120', ram[0x0e] !== 0xff)) continue;
+    if (!$br('Z_02:3123', ram[0x0f] !== 0x07)) break;
+  }
   y = ram[CurSaveSlot];
   poke(SaveFileOpenMarkers + y, 0x5a);
   poke(SaveFileCloseMarkers + y, 0xa5);
   y = (y << 1) & 0xff; // copy the checksum from file B to file A
   const sums = fileBChecksums();
-  poke(FileAChecksums + y, peek(sums + y));
+  $pxa('Z_02:3132', sums, y); poke(FileAChecksums + y, peek(sums + y));
   y++;
-  poke(FileAChecksums + y, peek(sums + y));
+  $pxa('Z_02:3135', sums, y); poke(FileAChecksums + y, peek(sums + y));
   y = ram[CurSaveSlot];
   poke(IsSaveFileBCommitted + y, 0xff); // file B has been committed
   return 0xff;
@@ -266,8 +280,10 @@ export function CopyFileBToFileA() {
 export function FetchProfileNameAddress() {
   // FetchProfileNameAddress (Z_02)
   const y = ram[CurSaveSlot];
-  ram[0x0c] = table(bus.rom, 'ProfileNameAddrsLo').byte(y);
-  ram[0x0d] = table(bus.rom, 'ProfileNameAddrsHi').byte(y);
+  const lo = table(bus.rom, 'ProfileNameAddrsLo');
+  const hi = table(bus.rom, 'ProfileNameAddrsHi');
+  $pxa('Z_02:3154', lo.addr, y); ram[0x0c] = lo.byte(y);
+  $pxa('Z_02:3156', hi.addr, y); ram[0x0d] = hi.byte(y);
   return ram[0x0d];
 }
 
@@ -275,9 +291,11 @@ export function FetchProfileNameAddress() {
 export function StoreSaveSlotHearts() {
   // StoreSaveSlotHearts (Z_02)
   const y = ram[CurSaveSlot];
-  ram[0x0c] = table(bus.rom, 'SaveSlotHeartsAddrsLo').byte(y);
-  ram[0x0d] = table(bus.rom, 'SaveSlotHeartsAddrsHi').byte(y);
-  for (let i = 0x01; i >= 0; i--) poke(word(0x0c) + i, ram[HeartValues + i]);
+  const lo = table(bus.rom, 'SaveSlotHeartsAddrsLo');
+  const hi = table(bus.rom, 'SaveSlotHeartsAddrsHi');
+  $pxa('Z_02:3162', lo.addr, y); ram[0x0c] = lo.byte(y);
+  $pxa('Z_02:3164', hi.addr, y); ram[0x0d] = hi.byte(y);
+  downLoop(0x01, 'Z_02:3172', (i) => { $pxa('Z_02:3169', HeartValues, i); poke(word(0x0c) + i, ram[HeartValues + i]); });
   return ram[HeartValues];
 }
 
@@ -285,12 +303,14 @@ export function StoreSaveSlotHearts() {
 export function SwitchProfileToSecondQuest() {
   // SwitchProfileToSecondQuest (Z_02)
   const addrs = table(bus.rom, 'WorldFlagBlockAddrs');
-  for (let x = 0x04; !(x & 0x80); x = (x - 2) & 0xff) {
-    ram[0x00] = addrs.byte(x);
-    ram[0x01] = addrs.byte(x + 1);
-    for (let y = 0x7f; y >= 0; y--) poke(word(0x00) + y, 0x00);
+  for (let x = 0x04; ;) {
+    $pxa('Z_02:4042', addrs.addr, x); ram[0x00] = addrs.byte(x);
+    $pxa('Z_02:4044', addrs.addr + 1, x); ram[0x01] = addrs.byte(x + 1);
+    downLoop(0x7f, 'Z_02:4051', (y) => poke(word(0x00) + y, 0x00));
+    x = (x - 2) & 0xff;
+    if (!$br('Z_02:4054', x < 0x80)) break;
   }
-  for (let y = 0x27; y >= 0; y--) ram[Items + y] = 0x00;
+  downLoop(0x27, 'Z_02:4061', (y) => { ram[Items + y] = 0x00; });
   ram[HeartValues] = 0x22;
   ram[HeartPartial]--;
   ram[MaxBombs] = 0x08;

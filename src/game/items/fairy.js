@@ -11,6 +11,7 @@ import { Anim_FetchObjPosForSpriteDescriptor } from '../draw/anim.js';
 import { Anim_SetSpriteDescriptorRedPaletteRow } from '../draw/sprites.js';
 import { Anim_WriteItemSprites } from '../draw/items.js';
 import { MoveFlyer, Flyer_SpeedUp, Flyer_DoNothing, Flyer_Wander } from '../enemies/flyer.js';
+import { $pxa } from '../../core/timing.js';
 
 /** SetUpFairyObject (Z_04): X = object slot. */
 export function SetUpFairyObject(x) {
@@ -54,6 +55,7 @@ export function DrawFairy(x) {
 /** ControlFairyFlight (Z_04): X = object slot; ControlFairyFlight_JumpTable by flying state. */
 export function ControlFairyFlight(x) {
   // ControlFairyFlight (Z_04)
+  $pxa('Z_04:11493', Flyer_ObjFlyingState, x);
   return tableJump(label('ControlFairyFlight_JumpTable').addr, ram[Flyer_ObjFlyingState + x], [
     () => Flyer_SpeedUp(x),
     () => Flyer_FairyDecideState(x),

@@ -3,6 +3,7 @@
 
 import { ram } from '../../core/ram.js';
 import { switchBank } from '../../core/asm.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   CurLevel, RoomId, RoomHistory, CurRoomHistoryIndex, GameMode,
 } from '../../core/vars.js';
@@ -26,7 +27,7 @@ export function RunCrossRoomTasksAndBeginUpdateMode_PlayModesNoCellar() {
 /** RunCrossRoomTasksAndBeginUpdateMode_EnterPlayModes (Z_07): modes 4, 5, 9, $B, $C. */
 export function RunCrossRoomTasksAndBeginUpdateMode_EnterPlayModes() {
   // RunCrossRoomTasksAndBeginUpdateMode_EnterPlayModes (Z_07)
-  if (ram[CurLevel] !== 0) {
+  if (!$br('Z_07:1590', ram[CurLevel] === 0)) {
     MarkRoomVisited();
     WriteBlankPrioritySprites();
   }
@@ -41,16 +42,22 @@ export function RunCrossRoomTasksAndBeginUpdateMode() {
   // Look for the current room in the room history.
   let y = 0;
   const a = ram[RoomId];
-  for (let x = 0x05; x >= 0; x--) if (ram[RoomHistory + x] === a) y++;
+  for (let x = 0x05; ;) {
+    // @LoopHistory
+    $pxa('Z_07:1606', RoomHistory, x);
+    if (!$br('Z_07:1607', ram[RoomHistory + x] !== a)) y++;
+    x--;
+    if (!$br('Z_07:1611', x >= 0)) break;
+  }
   // Not found: store it at the cycling history index.
-  if (y === 0) {
+  if (!$br('Z_07:1615', y !== 0)) {
     ram[RoomHistory + ram[CurRoomHistoryIndex]] = a;
     ram[CurRoomHistoryIndex]++;
-    if (ram[CurRoomHistoryIndex] >= 0x06) ram[CurRoomHistoryIndex] = 0x00;
+    if (!$br('Z_07:1621', ram[CurRoomHistoryIndex] < 0x06)) ram[CurRoomHistoryIndex] = 0x00;
   }
   // @RunTasksMode5
-  if (ram[GameMode] === 0x05) {
-    if (ram[CurLevel] === 0) {
+  if (!$br('Z_07:1629', ram[GameMode] !== 0x05)) {
+    if ($br('Z_07:1633', ram[CurLevel] === 0)) {
       // @CheckWhirlwind
       switchBank(1);
       return CheckInitWhirlwindAndBeginUpdate(); // JMP

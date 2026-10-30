@@ -66,14 +66,16 @@ for (const name of Object.keys(REQUIRED)) {
     // vblank: the second NMI runs before the first one's RTI). The oracle's frame k (first RTI) then
     // holds two NMIs of work (FrameCounter +2) and frame k+1 none (+0); the port, one NMI per frame
     // without a CPU cycle model (docs/TIMING.md), is one NMI behind at k only and equal again at k+1.
-    // Those frames k are the only divergences tolerated; everything else must be identical.
+    // Those frames k are the only divergences tolerated, and only without the cycle tracker
+    // (ZELDA_TIMING=off): with it (the default) the port runs the nested NMI too and every frame must match.
     const nested = new Set();
     for (let i = 1; i + 1 < a.frames.length; i++) {
       const fc = (j) => a.frames[j].ram[V.FrameCounter];
       if (((fc(i) - fc(i - 1)) & 0xff) === 2 && fc(i + 1) === fc(i)) nested.add(a.frames[i].frame);
     }
     if (nested.size) t.diagnostic(`nested NMIs in the original at frames ${[...nested].join(', ')}`);
-    const bad = report.frames.filter((f) => !nested.has(f.frame));
+    const tolerate = (process.env.ZELDA_TIMING || 'jsnes') === 'off';
+    const bad = report.frames.filter((f) => !(tolerate && nested.has(f.frame)));
     assert.equal(report.missing.length, 0, `${name}: frames missing in the port`);
     assert.equal(bad.length, 0, `${name}: first divergence at frame ${bad[0]?.frame}: `
       + JSON.stringify(bad[0] && { ram: bad[0].ram.slice(0, 8), sram: bad[0].sram.slice(0, 8) }));

@@ -17,7 +17,8 @@ import { HandleShotBlocked } from '../weapons/shots.js';
 import { HandleMonsterWeaponCollision, DealDamage, ParryOrShove, PlayParryTune } from './damage.js';
 import { HarmLink, BeginShove } from './link-harm.js';
 import { bus } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * CheckMonsterCollisions (Z_01). X = monster slot. Checks Link's weapons against the monster (unless
@@ -27,9 +28,11 @@ import { table } from '../../core/rom.js';
 export function CheckMonsterCollisions(x) {
   // CheckMonsterCollisions (Z_01)
   GetObjectMiddle(x);
-  if ((ram[ObjAttr + x] & 0x20) === 0) {
+  $pxa('Z_01:5480', ObjAttr, x);
+  if (!$br('Z_01:5482', (ram[ObjAttr + x] & 0x20) !== 0)) {
     // Not invincible. If temporarily invincible, return.
-    if (ram[ObjInvincibilityTimer + x] !== 0) return;
+    $pxa('Z_01:5485', ObjInvincibilityTimer, x);
+    if ($br('Z_01:5486', ram[ObjInvincibilityTimer + x] !== 0)) return;
     CheckMonsterBoomerangOrFoodCollision(x, 0x0f);
     CheckMonsterSwordShotOrMagicShotCollision(x, 0x0e);
     CheckMonsterBombOrFireCollision(x, 0x10);
@@ -39,18 +42,21 @@ export function CheckMonsterCollisions(x) {
   }
   // @CheckLink
   CheckLinkCollision(x);
+  $pxa('Z_01:5507', ObjType, x);
   const a = ram[ObjType + x];
-  if (ram[ObjMetastate + x] !== 0) {
+  $pxa('Z_01:5508', ObjMetastate, x);
+  if (!$br('Z_01:5509', ram[ObjMetastate + x] === 0)) {
     // Dying: a goriya that threw a boomerang destroys it.
-    if (a !== 0x05 && a !== 0x06) return;
-    if (!(ram[ObjState + x] & 0x80)) return;
+    if (!$br('Z_01:5515', a === 0x05) && $br('Z_01:5517', a !== 0x06)) return;
+    if ($br('Z_01:5520', !(ram[(ObjState + x) & 0xff] & 0x80))) return;
+    $pxa('Z_01:5521', ObjRefId, x);
     const y = ram[ObjRefId + x];
     ram[ObjType + y] = 0x00;
     return;
   }
   // @CheckCaptors: wallmaster / like-like with a hit in [0C].
-  if (a !== 0x27 && a !== 0x17) return;
-  if (ram[0x0c] === 0) return;
+  if (!$br('Z_01:5532', a === 0x27) && $br('Z_01:5534', a !== 0x17)) return;
+  if ($br('Z_01:5537', ram[0x0c] === 0)) return;
   ram[ObjCaptureTimer + x]++;
 }
 
@@ -63,9 +69,10 @@ export function GetObjectMiddle(x) {
   // GetObjectMiddle (Z_01)
   ram[0x02] = 0x08;
   ram[0x03] = 0x08;
-  if (ram[ObjAttr + x] & 0x40) ram[0x02] >>= 1; // half width
-  ram[0x02] = ram[ObjX + x] + ram[0x02];
-  ram[0x03] = ram[ObjY + x] + ram[0x03];
+  $pxa('Z_01:5557', ObjAttr, x);
+  if (!$br('Z_01:5559', (ram[ObjAttr + x] & 0x40) === 0)) ram[0x02] >>= 1; // half width
+  ram[0x02] = ram[(ObjX + x) & 0xff] + ram[0x02];
+  ram[0x03] = ram[(ObjY + x) & 0xff] + ram[0x03];
   return ram[0x03];
 }
 
@@ -82,7 +89,7 @@ export function CheckLinkCollision(x) {
   ram[0x09] = 0;
   ram[0x0c] = 0;
   ram[0x00] = 0;
-  if ((ram[ObjInvincibilityTimer] | ram[InvClock] | ram[ObjStunTimer] | ram[ObjStunTimer + x]) !== 0) return;
+  if ($br('Z_01:5617', (ram[ObjInvincibilityTimer] | ram[InvClock] | ram[ObjStunTimer] | ram[(ObjStunTimer + x) & 0xff]) !== 0)) return;
   return CheckLinkCollisionPreinit(x); // falls through
 }
 
@@ -92,26 +99,32 @@ export function CheckLinkCollision(x) {
  */
 export function CheckLinkCollisionPreinit(x) {
   // CheckLinkCollisionPreinit (Z_01)
-  if (ram[ObjState] === 0x40) return; // Link halted
-  if (ram[LinkParalyzed] !== 0) return;
+  if ($br('Z_01:5623', ram[ObjState] === 0x40)) return; // Link halted
+  if ($br('Z_01:5625', ram[LinkParalyzed] !== 0)) return;
   // A monster shot only harms in its flying state ($1x).
-  if (ram[ObjType + x] >= 0x53 && (ram[ObjState + x] & 0xf0) !== 0x10) return;
+  $pxa('Z_01:5629', ObjType, x);
+  if (!$br('Z_01:5631', ram[ObjType + x] < 0x53)
+    && $br('Z_01:5635', (ram[(ObjState + x) & 0xff] & 0xf0) !== 0x10)) return;
   ram[0x04] = ram[ObjX] + 0x08;
   ram[0x05] = ram[ObjY] + 0x08;
-  if (DoObjectsCollide(0x09) === 0) return;
+  if ($br('Z_01:5650', DoObjectsCollide(0x09) === 0)) return;
+  $pxa('Z_01:5655', ObjType, x);
   const t = ram[ObjType + x];
-  if (t < 0x53) return HarmLink(x);
+  if ($br('Z_01:5657', t < 0x53)) return HarmLink(x);
   // A monster's shot/projectile.
   ram[ShotCollidesWithLink]++;
-  if (t === 0x56 || t === 0x5a) return HarmLink(x);
-  if ((ram[ObjState] & 0xf0) !== 0) return HarmLink(x);
+  if ($br('Z_01:5666', t === 0x56) || $br('Z_01:5668', t === 0x5a)) return HarmLink(x);
+  if ($br('Z_01:5671', (ram[ObjState] & 0xf0) !== 0)) return HarmLink(x);
   // Facing opposite directions? (one component of a diagonal direction is enough)
-  if (((ram[ObjDir] | ram[ObjDir + x]) & 0x0c) !== 0x0c
-      && ((ram[ObjDir] | ram[ObjDir + x]) & 0x03) !== 0x03) return HarmLink(x);
+  const dx = (ObjDir + x) & 0xff; // zp,X
+  if (!$br('Z_01:5682', ((ram[ObjDir] | ram[dx]) & 0x0c) === 0x0c)
+      && $br('Z_01:5687', ((ram[ObjDir] | ram[dx]) & 0x03) !== 0x03)) return HarmLink(x);
   // @FacingOpposite: rocks, $54, arrows and boomerangs are always parried; the rest need the
   // magic shield.
+  $pxa('Z_01:5696', ObjType, x);
   const t2 = ram[ObjType + x];
-  if (t2 >= 0x55 && t2 < 0x5b && ram[InvMagicShield] === 0) return HarmLink(x);
+  if (!$br('Z_01:5698', t2 < 0x55) && !$br('Z_01:5700', t2 >= 0x5b)
+    && $br('Z_01:5705', ram[InvMagicShield] === 0)) return HarmLink(x);
   // @Parry
   ram[Tune0Request] = 0x01;
   ram[0x06] = 0x00;
@@ -123,12 +136,15 @@ export function CheckLinkCollisionPreinit(x) {
  */
 export function CheckMonsterBoomerangOrFoodCollision(x, y) {
   // CheckMonsterBoomerangOrFoodCollision (Z_01)
-  if (ram[ObjState + y] & 0x80) return; // ASL / BCS to an RTS
+  $pxa('Z_01:5837', ObjState, y);
+  if ($br('Z_01:5839', (ram[ObjState + y] & 0x80) !== 0)) return; // ASL / BCS to an RTS
   ram[0x00] = y;
   ram[0x09] = 0x02; // boomerang damage type
   ram[0x0d] = 0x0a;
   ram[0x0e] = 0x0a;
+  $pxa('Z_01:5852', ObjX, y);
   ram[0x04] = ram[ObjX + y] + 0x04;
+  $pxa('Z_01:5858', ObjY, y);
   return CheckMonsterWeaponCollision(ram[ObjY + y] + 0x08, x); // falls through
 }
 
@@ -142,19 +158,22 @@ export function CheckMonsterWeaponCollision(a, x) {
   ram[0x05] = a;
   ram[0x06] = 0x00;
   const y = ram[0x00];
-  if (ram[ObjState + y] === 0) return y;
-  if (DoObjectsCollideWithThresholds() === 0) return y;
-  if (y !== 0x0f) {
+  $pxa('Z_01:5887', ObjState, y);
+  if ($br('Z_01:5888', ram[ObjState + y] === 0)) return y;
+  if ($br('Z_01:5892', DoObjectsCollideWithThresholds() === 0)) return y;
+  if ($br('Z_01:5896', y !== 0x0f)) {
     HandleMonsterWeaponCollision(x, y);
     return y;
   }
   // The boomerang: parry sound if the monster is immune to it; it returns fast to the thrower.
-  if (ram[ObjInvincibilityMask + x] & ram[0x09]) PlayParryTune();
+  $pxa('Z_01:5900', ObjInvincibilityMask, x);
+  if (!$br('Z_01:5902', (ram[ObjInvincibilityMask + x] & ram[0x09]) === 0)) PlayParryTune();
   ram[ObjState + y] = 0x50;
-  if (ram[ObjInvincibilityMask + x] & ram[0x09]) return y;
+  $pxa('Z_01:5910', ObjInvincibilityMask, x);
+  if ($br('Z_01:5912', (ram[ObjInvincibilityMask + x] & ram[0x09]) !== 0)) return y;
   // It stuns: no damage points, stun timer $10 ($A0 frames).
   ram[0x07] = 0x00;
-  ram[ObjStunTimer + x] = 0x10;
+  ram[(ObjStunTimer + x) & 0xff] = 0x10;
   HandleMonsterWeaponCollision(x, y);
   return y;
 }
@@ -167,18 +186,20 @@ export function CheckMonsterSwordShotOrMagicShotCollision(x, y) {
   // CheckMonsterSwordShotOrMagicShotCollision (Z_01)
   ram[0x00] = y;
   ram[0x09] = 0x10; // magic shot damage type
-  if (ram[ObjState + y] & 0x01) return; // sword shot spreading out
+  $pxa('Z_01:6047', ObjState, y);
+  if ($br('Z_01:6049', (ram[ObjState + y] & 0x01) !== 0)) return; // sword shot spreading out
   ram[0x0d] = 0x0c;
   let dmg = 0x20;
-  if (!(ram[ObjState + y] & 0x80)) {
+  $pxa('Z_01:6056', ObjState, y);
+  if (!$br('Z_01:6059', (ram[ObjState + y] & 0x80) !== 0)) {
     // A sword shot: sword damage type and points by sword.
     ram[0x09] = 0x01;
     const s = ram[Items];
-    dmg = s === 0x03 ? 0x40 : s === 0x02 ? 0x20 : 0x10;
+    dmg = $br('Z_01:6074', s === 0x03) ? 0x40 : $br('Z_01:6077', s === 0x02) ? 0x20 : 0x10;
   }
   // @CheckCollision
   CheckMonsterShotCollision(dmg, x);
-  if (ram[0x06] === 0) return;
+  if ($br('Z_01:6086', ram[0x06] === 0)) return;
   HandleShotBlocked(0x0e); // X = shot slot; TXA/PHA ... PLA/TAX keep the monster slot
 }
 
@@ -192,19 +213,23 @@ export function CheckMonsterBombOrFireCollision(x, y) {
   ram[0x09] = 0x20;
   ram[0x07] = 0x10;
   ram[0x0d] = 0x0e;
+  $pxa('Z_01:6121', ObjState, y);
   const st = ram[ObjState + y];
-  if (st < 0x20) {
-    if (st !== 0x13) return;
+  if (!$br('Z_01:6123', st >= 0x20)) {
+    if ($br('Z_01:6125', st !== 0x13)) return;
     ram[0x09] = 0x08;
     ram[0x07] = 0x40;
     ram[0x0d] = 0x18;
   }
   // @SetHotspot
+  $pxa('Z_01:6138', ObjX, y);
   ram[0x04] = ram[ObjX + y] + 0x08;
+  $pxa('Z_01:6142', ObjY, y);
   ram[0x05] = ram[ObjY + y] + 0x08;
-  if (DoObjectsCollide(ram[0x0d]) === 0) return;
+  if ($br('Z_01:6150', DoObjectsCollide(ram[0x0d]) === 0)) return;
   HandleMonsterWeaponCollision(x, ram[0x00]); // Y = [00] (DoObjectsCollideWithThresholds)
-  if (ram[ObjInvincibilityMask + x] & ram[0x09]) return;
+  $pxa('Z_01:6154', ObjInvincibilityMask, x);
+  if ($br('Z_01:6156', (ram[ObjInvincibilityMask + x] & ram[0x09]) !== 0)) return;
   BeginShove(x);
 }
 
@@ -213,9 +238,12 @@ export function CheckMonsterSwordCollision(x, y) {
   // CheckMonsterSwordCollision (Z_01)
   ram[0x00] = y;
   ram[0x09] = 0x01; // sword damage type
-  if (ram[ObjState + y] !== 0x02) return;
+  $pxa('Z_01:6183', ObjState, y);
+  if ($br('Z_01:6185', ram[ObjState + y] !== 0x02)) return;
   // LDA SwordDamagePoints-1, Y (Y = Items)
-  const a = table(bus.rom, 'SwordDamagePoints').byte(ram[Items] - 1);
+  const sdp = table(bus.rom, 'SwordDamagePoints');
+  $pxa('Z_01:6189', label('SwordDamagePoints').addr - 1, ram[Items]); // run address (WRAM)
+  const a = sdp.byte(ram[Items] - 1);
   return CheckMonsterStabbingCollision(a, x); // falls through
 }
 
@@ -226,7 +254,7 @@ export function CheckMonsterSwordCollision(x, y) {
 export function CheckMonsterStabbingCollision(a, x) {
   // CheckMonsterStabbingCollision (Z_01)
   ram[0x07] = a;
-  if (ram[ObjDir] & 0x0c) {
+  if (!$br('Z_01:6210', (ram[ObjDir] & 0x0c) === 0)) {
     ram[0x0d] = 0x0c;
     ram[0x0e] = 0x10;
   } else {
@@ -235,7 +263,7 @@ export function CheckMonsterStabbingCollision(a, x) {
     ram[0x0e] = 0x0c;
   }
   const y = CheckMonsterSlenderWeaponCollision2(x);
-  if (ram[0x06] === 0) return;
+  if ($br('Z_01:6229', ram[0x06] === 0)) return;
   return ParryOrShove(x, y);
 }
 
@@ -243,16 +271,18 @@ export function CheckMonsterStabbingCollision(a, x) {
 export function CheckMonsterArrowOrRodCollision(x, y) {
   // CheckMonsterArrowOrRodCollision (Z_01)
   ram[0x00] = y;
+  $pxa('Z_01:6244', ObjState, y);
   const st = ram[ObjState + y];
-  if (st >= 0x30) {
+  if (!$br('Z_01:6249', st < 0x30)) {
     // The rod: a stab with $20 points.
     ram[0x09] = 0x01;
+    $br('Z_01:6253', true); // BNE CheckMonsterStabbingCollision (always)
     return CheckMonsterStabbingCollision(0x20, x);
   }
-  if (st >= 0x20) return; // the arrow is no longer flying
+  if ($br('Z_01:6257', st >= 0x20)) return; // the arrow is no longer flying
   ram[0x09] = 0x04; // arrow damage type
   let a = 0x20;
-  if (ram[InvArrow] !== 0x01) a = (a << 1) & 0xff; // silver arrow
+  if (!$br('Z_01:6267', ram[InvArrow] === 0x01)) a = (a << 1) & 0xff; // silver arrow
   ram[0x0d] = 0x0b;
   return CheckMonsterShotCollision(a, x); // falls through
 }
@@ -264,10 +294,11 @@ export function CheckMonsterArrowOrRodCollision(x, y) {
 export function CheckMonsterShotCollision(a, x) {
   // CheckMonsterShotCollision (Z_01)
   const y = CheckMonsterSlenderWeaponCollision(a, x);
-  if (ram[0x06] === 0) return;
-  if (y === 0x12) {
+  if ($br('Z_01:6290', ram[0x06] === 0)) return;
+  if (!$br('Z_01:6299', y !== 0x12)) {
     // An arrow. Pol's Voice dies for sure.
-    if (ram[ObjType + x] === 0x16) {
+    $pxa('Z_01:6300', ObjType, x);
+    if (!$br('Z_01:6302', ram[ObjType + x] !== 0x16)) {
       ram[ObjHP + x] = 0x00;
       return DealDamage(x);
     }
@@ -298,12 +329,16 @@ export function CheckMonsterSlenderWeaponCollision2(x) {
   // CheckMonsterSlenderWeaponCollision2 (Z_01)
   const y = ram[0x00];
   let a;
-  if (ram[ObjDir] & 0x0c) {
+  if (!$br('Z_01:6383', (ram[ObjDir] & 0x0c) === 0)) {
+    $pxa('Z_01:6384', ObjX, y);
     ram[0x04] = ram[ObjX + y] + 0x06;
+    $pxa('Z_01:6388', ObjY, y);
     a = (ram[ObjY + y] + 0x08) & 0xff;
   } else {
     // @CheckHorizontal
+    $pxa('Z_01:6399', ObjX, y);
     ram[0x04] = ram[ObjX + y] + 0x08;
+    $pxa('Z_01:6403', ObjY, y);
     a = (ram[ObjY + y] + 0x06) & 0xff;
   }
   return CheckMonsterWeaponCollision(a, x);
@@ -329,9 +364,9 @@ export function DoObjectsCollideWithThresholds() {
   // DoObjectsCollideWithThresholds (Z_01)
   ram[0x06] = 0x00;
   ram[0x0a] = Abs((ram[0x02] - ram[0x04]) & 0xff);
-  if (ram[0x0a] >= ram[0x0d]) return ram[0x06];
+  if ($br('Z_01:6464', ram[0x0a] >= ram[0x0d])) return ram[0x06];
   ram[0x0b] = Abs((ram[0x03] - ram[0x05]) & 0xff);
-  if (ram[0x0b] >= ram[0x0e]) return ram[0x06];
+  if ($br('Z_01:6475', ram[0x0b] >= ram[0x0e])) return ram[0x06];
   ram[0x06]++;
   return ram[0x06];
 }

@@ -18,12 +18,13 @@ import { WieldArrow } from './arrow.js';
 import { WieldCandle } from './fire.js';
 import { WieldFlute } from './flute.js';
 import { WieldRod } from './rod.js';
+import { $br } from '../../core/timing.js';
 
 /** WieldItem (Z_05): uses the selected B item (nothing for the letter slot $0F). */
 export function WieldItem() {
   // WieldItem (Z_05)
   const a = ram[SelectedItemSlot];
-  if (a === 0x0f) return; // L14E71_Exit
+  if ($br('Z_05:2887', a === 0x0f)) return; // L14E71_Exit
   return tableJump(label('WieldItem_JumpTable').addr, a, [
     WieldBoomerang, WieldBomb, WieldArrow, WieldNothing, WieldCandle, WieldFlute, WieldFood,
     WieldPotion, WieldRod,
@@ -39,7 +40,7 @@ export function WieldWeapon(a, x) {
   ram[ObjState + x] = a;
   ram[ObjQSpeedFrac + x] = 0xc0;
   PlaceWeaponForPlayerStateAndAnim(x);
-  if ((ram[ObjDir + x] & 0x0c) === 0) return WieldNothing();
+  if ($br('Z_05:2994', (ram[ObjDir + x] & 0x0c) === 0)) return WieldNothing();
   ram[ObjX + x] = ram[ObjX + x] + 0x03;
   return WieldNothing(); // falls through
 }
@@ -52,7 +53,7 @@ export function WieldNothing() {
 /** WieldPotion (Z_05): drinks one potion level: fill the hearts with the game paused (Paused = 2). */
 export function WieldPotion() {
   // WieldPotion (Z_05)
-  if (ram[Potion] === 0) return; // L14EC6_Exit
+  if ($br('Z_05:3022', ram[Potion] === 0)) return; // L14EC6_Exit
   ram[Potion]--;
   ram[World_IsFillingHearts] = 0x01;
   ram[Paused] = 0x02;
@@ -104,9 +105,9 @@ export function ChooseOffsetForDirectionH(a) {
   let y = 0;
   ram[0x00] = y;
   a &= 0x03;
-  if (a !== 0) {
+  if (!$br('Z_01:3973', a === 0)) {
     y++; // horizontal
-    if ((a & 0x01) === 0) y++; // left
+    if (!$br('Z_01:3976', (a & 0x01) !== 0)) y++; // left
   }
   return ram[0x00 + y];
 }

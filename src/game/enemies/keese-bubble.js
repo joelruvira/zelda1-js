@@ -1,6 +1,7 @@
 // P19 — enemies/keese-bubble (Z_04): bubbles, keeses and AnimateAndDrawCommonObject. The keese routines
 // were advanced by the wave-4 integrator. X = object slot in every routine.
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
@@ -37,16 +38,18 @@ export function InitBubble(x) {
 export function UpdateBubble(x) {
   // UpdateBubble (Z_04)
   UpdateCommonWanderer(0x40, x);
+  $pxa('Z_04:1125', ObjType, x);
   let a = ram[ObjType + x];
-  if (a !== 0x2b) a = (a - 0x2b) & 0xff; // SEC / SBC #$2B
+  if (!$br('Z_04:1131', a === 0x2b)) a = (a - 0x2b) & 0xff; // SEC / SBC #$2B
   else a = ram[FrameCounter] & 0x03; // @Flash
   // @Animate
   Anim_SetSpriteDescriptorAttributes(a);
   AnimateAndDrawCommonObject(0x01, x);
   CheckLinkCollision(x);
-  if (ram[0x06] === 0) return; // @Exit
+  if ($br('Z_04:1151', ram[0x06] === 0)) return; // @Exit
+  $pxa('Z_04:1155', ObjType, x);
   a = ram[ObjType + x];
-  if (a !== 0x2b) {
+  if ($br('Z_04:1157', a !== 0x2b)) {
     // @BlockOrUnblock
     ram[SwordBlocked] = (a - 0x2c) & 0xff;
     return;
@@ -58,6 +61,7 @@ export function UpdateBubble(x) {
 export function InitBlueKeese(x) {
   // InitBlueKeese (Z_04)
   const y = ram[Random + x] & 0x07;
+  $pxa('Z_04:1105', table(bus.rom, 'Directions8').addr, y);
   ram[ObjDir + x] = table(bus.rom, 'Directions8').byte(y);
   ResetFlyerState(x);
   ram[FlyingMaxSpeedFrac] = 0xc0;
@@ -87,11 +91,12 @@ export function AnimateAndDrawCommonObject(a, x) {
 /** UpdateKeese (Z_04). X = keese: fly (no clock, no item lifted), draw, collide, reset the shove. */
 export function UpdateKeese(x) {
   // UpdateKeese (Z_04)
-  if ((ram[InvClock] | ram[ItemLiftTimer]) === 0) {
+  if (!$br('Z_04:1189', (ram[InvClock] | ram[ItemLiftTimer]) !== 0)) {
     ControlKeeseFlight(x);
     MoveFlyer(x);
   }
   Anim_FetchObjPosForSpriteDescriptor(x);
+  $pxa('Z_04:1197', Flyer_ObjDistTraveled, x);
   DrawObjectMirrored((ram[Flyer_ObjDistTraveled + x] & 0x02) >> 1, x);
   CheckMonsterCollisions(x);
   return ResetShoveInfo(x);
@@ -100,6 +105,7 @@ export function UpdateKeese(x) {
 /** ControlKeeseFlight (Z_04). X = keese: ControlKeeseFlight_JumpTable by flying state. */
 export function ControlKeeseFlight(x) {
   // ControlKeeseFlight (Z_04)
+  $pxa('Z_04:1205', Flyer_ObjFlyingState, x);
   return tableJump(label('ControlKeeseFlight_JumpTable').addr, ram[Flyer_ObjFlyingState + x], [
     () => Flyer_SpeedUp(x),
     () => Flyer_KeeseDecideState(x),
@@ -115,9 +121,9 @@ export function Flyer_KeeseDecideState(x) {
   // Flyer_KeeseDecideState (Z_04)
   let y = 0x02;
   const a = ram[Random + 1 + x];
-  if (a < 0xa0) {
+  if (!$br('Z_04:1226', a >= 0xa0)) {
     y++;
-    if (a < 0x20) y++;
+    if (!$br('Z_04:1229', a >= 0x20)) y++;
   }
   return Flyer_SetStateAndTurns(x, y); // falls through
 }

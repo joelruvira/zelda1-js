@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 // Test battery of the whole port (docs/ORACLE.md, "Batería").
 //
-//   node tools/oracle/battery.mjs movies [names...] [--dir d] [--jobs J]
+//   node tools/oracle/battery.mjs movies [names...] [--dir d] [--jobs J] [--timing jsnes|hardware|off] [--require-zero]
 //       Lockstep of every movie (default: every tests/oracle/movies/*.zmv) in the PURE port against the
 //       oracle: RAM, SRAM and the WHOLE picture compared on EVERY frame (no PNGs, nothing sampled).
-//       Every picture or RAM difference is classified (see classify()); anything outside the documented
-//       CPU-timing classes is a DEFECT and makes the exit code 1. Movies run in parallel (one process
-//       each). Reports: out/battery/movies/<movie>.json and out/battery/movies-summary.json.
+//       The port runs with the cycle tracker (src/core/timing.js) in jsnes-compat mode by default
+//       (--timing off = the old zero-time model). The goal is 0 differing pixels in every frame: the
+//       report counts differing frames and pixels; each difference is still classified (classify()) as a
+//       hint. RAM/SRAM differences and pictures outside the classes without the tracker are DEFECTs (exit 1);
+//       with --require-zero any differing pixel fails. Besides the picture after each NMI, every VIDEO
+//       frame is compared (hash of rows 1-239, lag frames inside long NMIs included, and the count of
+//       video frames must match): report field `video`; --require-zero fails on it too.
+//       Movies run in parallel (one process each).
+//       Reports: out/battery/movies/<movie>.json and out/battery/movies-summary.json.
 //   node tools/oracle/battery.mjs movie <file.zmv> [--sram f.sav] [--json out.json]
 //       One movie (what `movies` runs in each child process).
 //   node tools/oracle/battery.mjs routines [--n 5000] [--scale 150] [--seeds 0,1,2] [--jobs J] [--only p22,p25]
@@ -45,6 +51,12 @@ function sramDiffs(a, b, out) {
   for (let i = 0; i < 0x2000; i++) if (a[i] !== b[i] && (i < 0xc90 || i >= 0x1f00)) out.push(0x6000 + i);
   return out;
 }
+/** FNV-1a of rows 1-239 (the compared rows) of a canonical index picture. */
+function fbHash(a) {
+  let h = 2166136261;
+  for (let i = 256; i < 240 * 256; i++) h = Math.imul(h ^ a[i], 16777619);
+  return h >>> 0;
+}
 /** Rows (1-239; row 0 is never drawn by jsnes) that differ, and the pixel count. */
 function fbDiff(a, b) {
   let count = 0;
@@ -69,13 +81,20 @@ function sramFor(moviePath) {
  * register writes ($2000-$2007, $4014) that land on a visible scanline and the video frames the NMI
  * spans, so picture differences can be classified on evidence, not by assumption.
  */
-export async function lockstep({ movie, sram = null, name = movie.name, modulePath, onFrame } = {}) {
+export async function lockstep({ movie, sram = null, name = movie.name, modulePath, onFrame, timing = 'jsnes' } = {}) {
   const rom = loadRomFile();
   const palette = await getPalette();
   const oracle = await Oracle.create({ rom: rom.bytes, sram, powerOnFill: 0 });
   const nes = oracle.nes;
   const ppu = nes.ppu;
   const cpu = nes.cpu;
+  // every VIDEO frame (also the lag frames inside a long NMI, which the per-NMI comparison never sees):
+  // a hash of rows 1-239 per completed picture, in the oracle and in the port (ppu.onFrame, tracker on)
+  const videoO = [];
+  let videoFn = null;
+  Object.defineProperty(oracle.handlers, 'video', { configurable: true,
+    get: () => (buf) => { videoO.push(fbHash(oracle.framebufferIndices(buf))); videoFn?.(buf); },
+    set: (f) => { videoFn = f; } });
   // --- oracle instrumentation (read-only: wraps, never changes emulation)
   let nmiStartVideo = 0;
   let writes = [];
@@ -109,7 +128,19 @@ export async function lockstep({ movie, sram = null, name = movie.name, modulePa
 
   // --- port
   const mod = await loadPort(modulePath);
-  const game = await mod.createGame({ rom: rom.bytes, sram: sram ? Uint8Array.from(sram) : null, powerOnFill: 0 });
+  // nested NMIs: the n-th NMI reads movie[n-1] (core/timing.js runs the extra NMI inside the frame)
+  const inputFor = (n) => [movie.p1[n - 1] ?? 0, movie.p2?.[n - 1] ?? 0];
+  const game = await mod.createGame({ rom: rom.bytes, sram: sram ? Uint8Array.from(sram) : null, powerOnFill: 0, timing, inputFor });
+  const tracker = game.timing ?? null;
+  const videoP = [];
+  const vppu = tracker && game.machine?.ppu?.continuous ? game.machine.ppu : null;
+  const video0 = vppu ? vppu.frameCount : 0; // pictures completed during the reset (before the first NMI)
+  if (vppu) {
+    const vbuf = new Uint8Array(FB_SIZE);
+    vppu.onFrame = (q) => { videoP.push(fbHash(canonicalizeIndices(q.indexBuffer, palette, vbuf))); };
+  }
+  const failures = new Map(); // first breadcrumb failure per location (tracker non-strict)
+  if (tracker) tracker.onFail = (f) => { const k = f.msg.replace(/ @cycle \d+/, ''); failures.set(k, (failures.get(k) ?? 0) + 1); };
   validateGame(game);
   const pfb = new Uint8Array(FB_SIZE);
   const portFb = () => {
@@ -117,7 +148,7 @@ export async function lockstep({ movie, sram = null, name = movie.name, modulePa
     return raw ? canonicalizeIndices(raw, palette, pfb) : null;
   };
 
-  const res = { movie: name, frames: movie.length, compared: 0, fbCompared: 0, divergent: [], fc: [], mode: [], noFb: [] };
+  const res = { movie: name, frames: movie.length, compared: 0, fbCompared: 0, divergent: [], fc: [], mode: [], noFb: [], timing, px: 0, pxFrames: 0 };
   let stepped = 0;
   let portError = null;
   const sink = {
@@ -144,7 +175,11 @@ export async function lockstep({ movie, sram = null, name = movie.name, modulePa
       if (f > 0 && !rec.fb && res.noFb.length < 50) res.noFb.push(f);
       if (f > 0 && rec.fb) {
         const p = portFb();
-        if (p) { fb = fbDiff(rec.fb, p); res.fbCompared++; }
+        if (p) {
+          fb = fbDiff(rec.fb, p);
+          res.fbCompared++;
+          if (fb.count) { res.px += fb.count; res.pxFrames++; }
+        }
       }
       res.compared++;
       if (r.length || s.length || fb?.count) {
@@ -158,6 +193,22 @@ export async function lockstep({ movie, sram = null, name = movie.name, modulePa
   oracle.run(movie, sink, { captureFb: (f) => f > 0 });
   res.portError = portError;
   res.portFrames = stepped;
+  if (vppu) {
+    // the port's k-th picture after the reset is the oracle's (video0 + k)-th video frame
+    const v = { oracle: videoO.length, port: video0 + videoP.length, compared: 0, differing: 0, first: [] };
+    for (let k = 0; k < videoP.length; k++) {
+      const o = videoO[video0 + k];
+      if (o === undefined) continue;
+      v.compared++;
+      if (o !== videoP[k]) { v.differing++; if (v.first.length < 20) v.first.push(video0 + k); }
+    }
+    if (!portError && v.oracle !== v.port) v.differing++; // a missing or extra picture is a difference too
+    res.video = v;
+  }
+  if (tracker) {
+    res.tracker = { nmis: tracker.stats.nmis, failures: tracker.stats.failures, crumbs: tracker.stats.crumbs,
+      failureSites: [...failures.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, n]) => `${n} x ${k}`) };
+  }
   classify(res, info);
   delete res.fc;
   delete res.mode;
@@ -185,8 +236,8 @@ function classify(res, info) {
     if (((fc[k] - fc[k - 1]) & 0xff) === 2 && fc[k + 1] === fc[k]) nested.add(k);
   }
   res.nestedFrames = [...nested];
-  res.classes = { 'nested-nmi': 0, lag: 0, 'split-63': 0, 'late-write': 0, DEFECT: 0 };
-  res.byClass = { 'nested-nmi': [], lag: [], 'split-63': [], 'late-write': [], DEFECT: [] };
+  res.classes = { 'nested-nmi': 0, lag: 0, 'split-63': 0, 'late-write': 0, timing: 0, DEFECT: 0 };
+  res.byClass = { 'nested-nmi': [], lag: [], 'split-63': [], 'late-write': [], timing: [], DEFECT: [] };
   for (const d of res.divergent) {
     const f = d.frame;
     const inf = info[f];
@@ -214,6 +265,9 @@ function classify(res, info) {
           `(${inf.writes.filter((w) => w.reg === 0x2001 || w.reg === 0x2000).map((w) => `$${w.reg.toString(16)}=${w.val.toString(16)}@${w.row}`).slice(0, 6).join(' ')})`;
       }
     }
+    // with the cycle tracker on, a picture-only difference outside the classes is a timing gap (a NMI
+    // not yet annotated, docs/TIMING.md), not a logic defect
+    if (cls === 'DEFECT' && ramEq && res.timing !== 'off') { cls = 'timing'; why = 'picture only (cycle tracker)'; }
     d.cls = cls;
     d.why = why;
     res.classes[cls]++;
@@ -268,7 +322,7 @@ async function runMovies(args) {
   const reports = [];
   await pool(movies, jobs, async (m) => {
     const json = join(OUT, 'movies', m.replace(/\.zmv$/, '.json'));
-    const r = await child(['movie', join(dir, m), '--json', json]);
+    const r = await child(['movie', join(dir, m), '--json', json, '--timing', String(args.timing ?? 'jsnes')]);
     if (r.code !== 0 && r.code !== 1) {
       console.log(`${m}: CRASH exit ${r.code}\n${r.err.slice(-2000)}`);
       reports.push({ movie: m.replace(/\.zmv$/, ''), crash: r.err.slice(-2000), defects: 1, frames: sizes[m], classes: {} });
@@ -279,21 +333,27 @@ async function runMovies(args) {
     console.log(line(rep));
   });
   reports.sort((a, b) => a.movie.localeCompare(b.movie));
-  const tot = { movies: reports.length, frames: 0, compared: 0, fbCompared: 0, defects: 0, classes: {} };
+  const tot = { movies: reports.length, frames: 0, compared: 0, fbCompared: 0, defects: 0, px: 0, pxFrames: 0, videoFrames: 0, videoDiff: 0, classes: {} };
   for (const r of reports) {
     tot.frames += r.frames; tot.compared += r.compared ?? 0; tot.fbCompared += r.fbCompared ?? 0; tot.defects += r.defects;
+    tot.px += r.px ?? 0; tot.pxFrames += r.pxFrames ?? 0;
+    tot.videoFrames += r.video?.compared ?? 0; tot.videoDiff += r.video?.differing ?? 0;
     for (const [k, v] of Object.entries(r.classes ?? {})) tot.classes[k] = (tot.classes[k] ?? 0) + v;
   }
   tot.seconds = Math.round((Date.now() - t0) / 1000);
   console.log('\n== totals', JSON.stringify(tot));
+  console.log(`== picture: ${tot.pxFrames} differing frames, ${tot.px} px (goal: 0); `
+    + `video frames: ${tot.videoDiff} differing of ${tot.videoFrames} (lag frames included; goal: 0)`);
   writeFileSync(join(OUT, 'movies-summary.json'), JSON.stringify({ totals: tot, reports }, null, 1));
-  return tot.defects ? 1 : 0;
+  return tot.defects || (args['require-zero'] && (tot.px || tot.videoDiff)) ? 1 : 0;
 }
 
 function line(r) {
   const c = r.classes ?? {};
   return `${r.movie.padEnd(22)} frames ${String(r.frames).padStart(6)} cmp ${String(r.compared).padStart(6)} fb ${String(r.fbCompared).padStart(6)}  ` +
-    `nested ${c['nested-nmi'] ?? 0} lag ${c.lag ?? 0} split63 ${c['split-63'] ?? 0} late ${c['late-write'] ?? 0}  DEFECT ${c.DEFECT ?? 0}` +
+    `px ${String(r.px ?? '?').padStart(7)} in ${String(r.pxFrames ?? '?').padStart(5)} frames  ` +
+    (r.video ? `video ${r.video.differing}/${r.video.compared}  ` : '') +
+    `nested ${c['nested-nmi'] ?? 0} lag ${c.lag ?? 0} split63 ${c['split-63'] ?? 0} late ${c['late-write'] ?? 0} timing ${c.timing ?? 0}  DEFECT ${c.DEFECT ?? 0}` +
     (r.portError ? `  PORT ERROR f${r.portError.frame}: ${r.portError.error}` : '') +
     (r.DEFECT_first ? `  first defect f${r.DEFECT_first}` : '');
 }
@@ -303,7 +363,7 @@ async function runOneMovie(args) {
   const movie = loadMovie(path);
   const sramPath = args.sram ? resolve(args.sram) : sramFor(path);
   const sram = sramPath ? new Uint8Array(readFileSync(sramPath)) : null;
-  const res = await lockstep({ movie, sram, name: basename(path, '.zmv') });
+  const res = await lockstep({ movie, sram, name: basename(path, '.zmv'), timing: String(args.timing ?? 'jsnes') });
   res.sram = sramPath ? basename(sramPath) : null;
   res.DEFECT_first = res.byClass.DEFECT[0]?.frame ?? null;
   if (args.json) writeFileSync(resolve(args.json), JSON.stringify(res, null, 1));
@@ -510,7 +570,7 @@ async function boot(args) {
 
 export async function main(argv) {
   const [cmd, ...rest] = argv;
-  const args = parseArgs(rest);
+  const args = parseArgs(rest, { flags: ['require-zero'] });
   if (cmd === 'movies') return runMovies(args);
   if (cmd === 'movie') return runOneMovie(args);
   if (cmd === 'routines') return runRoutines(args);

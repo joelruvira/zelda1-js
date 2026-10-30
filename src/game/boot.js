@@ -12,6 +12,7 @@ import {
   IsEliminateSaveFileOptionEnabled, GameSubmode, RoomId,
 } from '../core/vars.js';
 import { CopyBlock } from './loaders/levelblocks.js';
+import { $br, $pxa, pollStatus } from '../core/timing.js';
 
 // ------------------------------------------------------------------ reset
 
@@ -34,10 +35,10 @@ export function IsrReset() {
   // IsrReset (Z_07)
   // SEI/CLD/TXS have no state in the port (the stack page is not compared).
   write(0x2000, 0x00);
-  // The two "wait for VBLANK" loops (LDA $2002 / AND #$80 / BEQ) only burn time before the
-  // first frame; the port runs reset before any frame, so only the exiting reads remain.
-  read(0x2002);
-  read(0x2002);
+  // The two "wait for VBLANK" loops (LDA $2002 / AND #$80 / BEQ): timed by the cycle tracker
+  // (core/timing.js); without it only the exiting reads remain.
+  pollStatus(bus.ppu, 0x80, true);
+  pollStatus(bus.ppu, 0x80, true);
   let a = 0xff; // ORA #$FF
   write(0x8000, a); // reset all MMC1 shift registers
   write(0xa000, a);
@@ -109,7 +110,7 @@ export function LoopForever() {
 /** InitSaveRam (Z_05). @returns C: 1 if save RAM was cleared, 0 if already initialised (also in cpu.c). */
 export function InitSaveRam() {
   // InitSaveRam (Z_05)
-  if (peek(SaveRamBegin) === 0x5a && peek(SaveRamEnd) === 0xa5) {
+  if (!$br('Z_05:7407', peek(SaveRamBegin) !== 0x5a) && $br('Z_05:7410', peek(SaveRamEnd) === 0xa5)) {
     cpu.c = 0;
     return 0;
   }
@@ -124,7 +125,7 @@ export function InitSaveRam() {
     cpu.c = 0;
     ram[0x00] = cpu.adc(ram[0x00], 1);
     ram[0x01] = cpu.adc(ram[0x01], 0);
-  } while (ram[0x01] !== 0x80);
+  } while ($br('Z_05:7432', ram[0x01] !== 0x80));
   cpu.c = 1;
   return 1;
 }
@@ -136,7 +137,11 @@ export function ClearRam() {
   ram[TransferredCommonPatterns] = 0;
   ram[TransferredDemoPatterns] = 0;
   ram[_Unknown_F3] = 0;
-  for (let y = 0xef; y !== 0xff; y = (y - 1) & 0xff) ram[y] = 0; // $0000-$00EF
+  for (let y = 0xef; ;) { // $0000-$00EF
+    ram[y] = 0;
+    y = (y - 1) & 0xff;
+    if (!$br('Z_05:7454', y !== 0xff)) break;
+  }
   ram[CurEdgeSpawnCell] = 0x40;
   ram[Random] = 0x40;
   ram[IsRegisterSaveFileOptionEnabled] = 0x01;
@@ -157,9 +162,9 @@ export function ClearRam0300UpTo(a, y) {
     do {
       ram[(word(0x00) + y) & 0x7ff] = 0x00; // STA ($00),Y (RAM pages 3..7)
       y = (y - 1) & 0xff;
-    } while (y !== 0xff);
+    } while ($br('Z_07:668', y !== 0xff));
     ram[0x01]--;
-  } while (ram[0x01] >= 0x03);
+  } while ($br('Z_07:672', ram[0x01] >= 0x03));
   ram[DynTileBuf] = 0xff;
   return 0xff;
 }
@@ -184,16 +189,18 @@ export function CopyCommonCodeToRam() {
   ram[0x01] = LOAD >> 8;
   ram[0x02] = RUN & 0xff;
   ram[0x03] = RUN >> 8;
-  let a;
-  do {
+  for (;;) {
+    $pxa('Z_01:1581', ram[0x00], 0);
     write(word(0x02), read(word(0x00))); // LDA ($00),Y / STA ($02),Y with Y = 0
     cpu.c = 0;
     ram[0x00] = cpu.adc(ram[0x00], 1);
     ram[0x01] = cpu.adc(ram[0x01], 0);
     cpu.c = 0;
     ram[0x02] = cpu.adc(ram[0x02], 1);
-    a = ram[0x03] = cpu.adc(ram[0x03], 0);
-  } while (a !== (end >> 8) || ram[0x02] !== (end & 0xff));
+    const a = ram[0x03] = cpu.adc(ram[0x03], 0);
+    if ($br('Z_01:1602', a !== (end >> 8))) continue;
+    if (!$br('Z_01:1605', ram[0x02] !== (end & 0xff))) break;
+  }
   return ram[0x02];
 }
 
@@ -201,7 +208,9 @@ export function CopyCommonCodeToRam() {
 export function CopyCommonDataToRam() {
   // CopyCommonDataToRam (Z_06)
   const t = table(bus.rom, 'CommonDataBlockAddr_Bank6');
+  $pxa('Z_06:110', t.addr, 0);
   ram[0x00] = t.byte(0);
+  $pxa('Z_06:113', t.addr, 1);
   ram[0x01] = t.byte(1);
   FetchDestAddrForCommonDataBlock();
   CopyBlock();
@@ -271,24 +280,28 @@ export function ClearNameTable(a, x, y) {
   write(0x2006, a);
   write(0x2006, 0x00);
   x = 0x04;
-  if (a < 0x20) x = ram[0x02]; // unverified code 1E5B6
+  if (!$br('Z_07:585', a >= 0x20)) x = ram[0x02]; // unverified code 1E5B6
   y = 0x00;
   a = ram[0x01];
   do {
     do {
       write(0x2007, a);
       y = (y - 1) & 0xff;
-    } while (y !== 0);
+    } while ($br('Z_07:596', y !== 0));
     x = (x - 1) & 0xff;
-  } while (x !== 0);
+  } while ($br('Z_07:598', x !== 0));
   y = ram[0x02];
   a = ram[0x00];
-  if (a >= 0x20) {
+  if (!$br('Z_07:604', a < 0x20)) {
     a = (a + 0x02 + 1) & 0xff; // ADC #$02 with C = 1 from the CMP
     write(0x2006, a);
     a = 0xc0;
     write(0x2006, a);
-    for (x = 0x40; x !== 0; x--) write(0x2007, y);
+    x = 0x40;
+    do {
+      write(0x2007, y);
+      x--;
+    } while ($br('Z_07:614', x !== 0));
   }
   x = ram[0x01];
   return { a, x, y };
@@ -296,7 +309,7 @@ export function ClearNameTable(a, x, y) {
 
 export function HideAllSprites() {
   // HideAllSprites (Z_07): every sprite's Y = $F8. Returns A = $F8 (X = Y = 0).
-  for (let y = 0; y < 0x100; y += 4) ram[Sprites + y] = 0xf8;
+  for (let y = 0, x = 0x40; ;) { ram[Sprites + y] = 0xf8; y += 4; x--; if (!$br('Z_07:649', x !== 0)) break; }
   return 0xf8;
 }
 

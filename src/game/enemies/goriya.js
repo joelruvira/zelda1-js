@@ -3,6 +3,7 @@
 // Wanderer_TargetPlayer / UpdateGoriya) runs them, so the pure port needs them before the rest of P19.
 // X = object slot in every routine.
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjType, ObjState, ObjShoveDir, ObjQSpeedFrac, ObjGridOffset, ChaseTargetX, ChaseTargetY, ObjX, ObjY,
   ObjWantsToShoot, ObjDir, ObjInputDir, Random, ObjTimer, InvClock, ObjStunTimer, ObjRefId,
@@ -19,22 +20,25 @@ import { _ShootIfWanted } from './shots.js';
 export function UpdateGoriya(x) {
   // UpdateGoriya (Z_04)
   // Note: the asm reads ObjType+1,X here (not ObjType,X).
-  if (ram[ObjType + 1 + x] !== 0x1e) {
-    if (ram[ObjState + x] & 0x80) return; // @Exit
+  $pxa('Z_04:435', ObjType + 1, x);
+  if (!$br('Z_04:440', ram[ObjType + 1 + x] === 0x1e)) {
+    if ($br('Z_04:442', (ram[ObjState + x] & 0x80) !== 0)) return; // @Exit
   }
   Walker_Move(x);
-  if (ram[ObjShoveDir + x] !== 0) return; // @Exit
+  if (!$br('Z_04:448', ram[ObjShoveDir + x] === 0)) return; // @Exit
   // @AfterMove
-  if (ram[ObjQSpeedFrac + x] === 0) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
+  $pxa('Z_04:455', ObjQSpeedFrac, x);
+  if ($br('Z_04:456', ram[ObjQSpeedFrac + x] === 0)) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
+  $pxa('Z_04:457', ObjGridOffset, x);
   let a = ram[ObjGridOffset + x] & 0x0f;
-  if (a !== 0) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
+  if ($br('Z_04:459', a !== 0)) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
   ram[ObjGridOffset + x] = a;
-  if (ram[ObjState] === 0xff) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
+  if ($br('Z_04:469', ram[ObjState] === 0xff)) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
   // Vertical distance in [00], direction in [02].
   ram[0x02] = 0x04;
   a = ram[ChaseTargetY];
   let y = ram[ObjY + x];
-  if (a < ram[ObjY + x]) {
+  if (!$br('Z_04:481', a >= ram[ObjY + x])) {
     a = ram[ObjY + x];
     y = ram[ChaseTargetY];
     ram[0x02] = (ram[0x02] << 1) & 0xff;
@@ -45,17 +49,18 @@ export function UpdateGoriya(x) {
   ram[0x03] = 0x01;
   a = ram[ChaseTargetX];
   y = ram[ObjX + x];
-  if (a < ram[ObjX + x]) {
+  if (!$br('Z_04:501', a >= ram[ObjX + x])) {
     a = ram[ObjX + x];
     y = ram[ChaseTargetX];
     ram[0x03] = (ram[0x03] << 1) & 0xff;
   }
   ram[0x0e] = y;
   ram[0x01] = (a - ram[0x0e]) & 0xff;
-  y = ram[0x00] >= ram[0x01] ? 0 : 1;
+  y = $br('Z_04:519', ram[0x00] >= ram[0x01]) ? 0 : 1;
   ram[ObjWantsToShoot + x] = 0x00;
-  if (ram[0x00 + y] >= 0x51) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
+  if ($br('Z_04:531', ram[0x00 + y] >= 0x51)) return L_Walker_SetInputDirAndTryShootingBoomerang(x);
   ram[ObjWantsToShoot + x]++;
+  $pxa('Z_04:533', 0x0002, y);
   ram[ObjDir + x] = ram[0x02 + y];
   return L_Walker_SetInputDirAndTryShootingBoomerang(x); // falls through
 }
@@ -68,20 +73,21 @@ export function L_Walker_SetInputDirAndTryShootingBoomerang(x) {
   // L_Walker_SetInputDirAndTryShootingBoomerang (Z_04)
   ram[ObjInputDir + x] = ram[ObjDir + x];
   let a = 0x5c;
+  $pxa('Z_04:545', ObjType, x);
   const t = ram[ObjType + x];
-  if (t !== 0x05) {
-    if (t !== 0x06) return; // @Exit
+  if (!$br('Z_04:547', t === 0x05)) {
+    if ($br('Z_04:551', t !== 0x06)) return; // @Exit
     a = ram[Random + x];
-    if (a !== 0x23 && a !== 0x77) return; // @Exit
+    if (!$br('Z_04:556', a === 0x23) && $br('Z_04:558', a !== 0x77)) return; // @Exit
     a = 0x5c; // @CheckTimerToShootBoomerang
   }
   // @CheckTimerToShoot
-  if (ram[ObjTimer + x] !== 0) return;
+  if ($br('Z_04:567', ram[ObjTimer + x] !== 0)) return;
   ram[0x00] = a;
-  if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return;
+  if ($br('Z_04:575', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return;
   // Y = ObjTimer,X (LDY ObjTimer, X above) = 0, passed through on failure.
   const r = _ShootIfWanted(ram[0x00], x, 0x00);
-  if (!r.c) return;
+  if ($br('Z_04:580', !r.c)) return;
   x = r.x;
   const y = r.y;
   ram[ObjState + x] = 0x80;

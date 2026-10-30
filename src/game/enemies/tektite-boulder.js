@@ -3,6 +3,7 @@
 // X = object slot in every routine.
 
 import { ram, cpu } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import {
@@ -43,6 +44,7 @@ export function InitBoulder(x) {
 export function InitTektite(x) {
   // InitTektite (Z_04)
   const y = ram[Random + 1 + x] & 0x03;
+  $pxa('Z_04:1844', tbl('TektiteStartingDirs').addr, y);
   let a = tbl('TektiteStartingDirs').byte(y);
   ram[ObjDir + x] = a;
   a = (a << 2) & 0xff;
@@ -56,18 +58,18 @@ export function InitTektite(x) {
  */
 export function UpdateBoulderSet(x) {
   // UpdateBoulderSet (Z_04)
-  if (ram[ObjTimer + x] !== 0) return; // @Exit
-  if (ram[ActiveBoulders] === 0x03) {
+  if ($br('Z_04:2170', ram[ObjTimer + x] !== 0)) return; // @Exit
+  if ($br('Z_04:2176', ram[ActiveBoulders] === 0x03)) {
     // @RandomizeTimer
     ram[ObjTimer + x] = ram[ObjTimer + x] + ram[Random + 1 + x];
     return;
   }
-  if (FindEmptyMonsterSlot().y === 0) return;
+  if ($br('Z_04:2180', FindEmptyMonsterSlot().y === 0)) return;
   x = ram[EmptyMonsterSlot];
   ram[ActiveBoulders]++;
   SetTypeAndClearObject(0x20, x);
   let a = ram[Random + 1 + x];
-  if (ram[ChaseTargetX] < 0x80) a &= 0x7f;
+  if (!$br('Z_04:2194', ram[ChaseTargetX] >= 0x80)) a &= 0x7f;
   else a |= 0x80; // @RightHalf
   // @SetX
   ram[ObjX + x] = a;
@@ -83,16 +85,16 @@ export function UpdateBoulderSet(x) {
  */
 export function UpdateTektiteOrBoulder(x) {
   // UpdateTektiteOrBoulder (Z_04)
-  if (ram[ObjShoveDir + x] !== 0) return Obj_Shove(x); // unverified code 108FC
+  if (!$br('Z_04:2253', ram[ObjShoveDir + x] === 0)) return Obj_Shove(x); // unverified code 108FC
   // @CheckStunned
-  if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return Jumper_AnimateAndCheckCollisions(x);
-  if (ram[ObjState + x] === 0) {
+  if ($br('Z_04:2266', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return Jumper_AnimateAndCheckCollisions(x);
+  if (!$br('Z_04:2270', ram[ObjState + x] !== 0)) {
     // State 0. On the ground.
-    if (ram[ObjTimer + x] !== 0) return Jumper_AnimateAndCheckCollisions(x); // @Animate
+    if ($br('Z_04:2276', ram[ObjTimer + x] !== 0)) return Jumper_AnimateAndCheckCollisions(x); // @Animate
     TurnTowardsPlayer8(x);
-    if ((ram[ObjDir + x] & 0x03) === 0) {
+    if (!$br('Z_04:2289', (ram[ObjDir + x] & 0x03) !== 0)) {
       let y = 0x02;
-      if (ram[ChaseTargetX] >= ram[ObjX + x]) y--;
+      if (!$br('Z_04:2293', ram[ChaseTargetX] < ram[ObjX + x])) y--;
       ram[ObjDir + x] = y | ram[ObjDir + x];
     }
     // @SetStateJump
@@ -101,31 +103,39 @@ export function UpdateTektiteOrBoulder(x) {
   }
   // @State1. Jumping.
   BoundFlyer(x);
-  if (ram[0x0f] === 0) {
+  if (!$br('Z_04:2365', ram[0x0f] !== 0)) {
     ram[Jumper_ObjReversalCount + x]++;
     return setUpJump(x);
   }
   Jumper_PointBoulderDownward(x);
   ram[Jumper_ObjReversalCount + x] = 0x00;
   let y = Jumper_GetKind(x);
-  let a = tbl('JumperYAccelerationBaseOffsets').byte(y);
+  const offs = tbl('JumperYAccelerationBaseOffsets');
+  $pxa('Z_04:2377', offs.addr, y);
+  let a = offs.byte(y);
   cpu.c = 0; // CLC
   y = cpu.adc(a, ram[ObjDir + x]); // TAY; the carry goes on into Jumper_MoveY
-  a = tbl('JumperYAccelerations').byte(y);
+  const accs = tbl('JumperYAccelerations');
+  $pxa('Z_04:2390', accs.addr, y);
+  a = accs.byte(y);
   Jumper_MoveY(a, x, 0x02); // max speed 2 pixels going down
-  y = (ram[ObjDir + x] & 0x02) ? 0xff : 0x01;
+  y = $br('Z_04:2401', (ram[ObjDir + x] & 0x02) !== 0) ? 0xff : 0x01; // BNE :+ keeps Y = $FF
   ram[ObjX + x] = y + ram[ObjX + x];
-  if (ram[Jumper_ObjSpeedWholeY + x] & 0x80) return Jumper_AnimateAndCheckCollisions(x); // going up
+  $pxa('Z_04:2411', Jumper_ObjSpeedWholeY, x);
+  if ($br('Z_04:2412', (ram[Jumper_ObjSpeedWholeY + x] & 0x80) !== 0)) return Jumper_AnimateAndCheckCollisions(x); // going up
+  $pxa('Z_04:2420', Jumper_ObjTargetY, x);
   a = Abs((ram[ObjY + x] - ram[Jumper_ObjTargetY + x]) & 0xff);
-  if (a >= 0x03) return Jumper_AnimateAndCheckCollisions(x);
+  if ($br('Z_04:2423', a >= 0x03)) return Jumper_AnimateAndCheckCollisions(x);
   // Landed: state 0.
   a = ResetObjState(x);
-  if (ram[ObjType + x] !== 0x20) {
+  $pxa('Z_04:2429', ObjType, x);
+  if (!$br('Z_04:2431', ram[ObjType + x] === 0x20)) {
     a = (0x10 + ram[Random + 1 + x]) & 0xff;
-    if (a < 0x20) a = (a - 0x40) & 0xff;
-    if (ram[ObjType + x] !== 0x0d) {
+    if (!$br('Z_04:2442', a >= 0x20)) a = (a - 0x40) & 0xff;
+    $pxa('Z_04:2447', ObjType, x);
+    if (!$br('Z_04:2449', ram[ObjType + x] === 0x0d)) {
       a &= 0x7f;
-      if (ram[Random + 1 + x] >= 0xa0) a &= 0x0f;
+      if (!$br('Z_04:2457', ram[Random + 1 + x] < 0xa0)) a &= 0x0f;
     }
   }
   // @SetTimerAndAnimate
@@ -135,15 +145,18 @@ export function UpdateTektiteOrBoulder(x) {
 
 /** UpdateTektiteOrBoulder@SetUpJump: escape corners, then the jump's target Y and starting speed. */
 function setUpJump(x) {
-  if (ram[Jumper_ObjReversalCount + x] >= 0x02) {
+  $pxa('Z_04:2320', Jumper_ObjReversalCount, x);
+  if (!$br('Z_04:2322', ram[Jumper_ObjReversalCount + x] < 0x02)) {
     ram[ObjDir + x] = ram[ObjDir + x] ^ 0x03;
     ram[Jumper_ObjReversalCount + x] = 0x00;
   }
   // @FinishSetUpJump
   Jumper_PointBoulderDownward(x);
   let y = ram[ObjDir + x];
+  $pxa('Z_04:2341', tbl('JumperYOffsets').addr, y);
   ram[Jumper_ObjTargetY + x] = ram[ObjY + x] + tbl('JumperYOffsets').byte(y);
   y = Jumper_GetKind(x);
+  $pxa('Z_04:2346', tbl('JumperStartSpeedsHi').addr, y);
   ram[Jumper_ObjSpeedWholeY + x] = tbl('JumperStartSpeedsHi').byte(y);
   Jumper_ResetVSpeedFrac(x);
   return Jumper_AnimateAndCheckCollisions(x); // @Animate
@@ -157,17 +170,20 @@ export function Jumper_AnimateAndCheckCollisions(x) {
   // Jumper_AnimateAndCheckCollisions (Z_04)
   let a = Anim_FetchObjPosForSpriteDescriptor(x);
   ram[0x0d] = a; // not used afterwards
-  if (ram[ObjType + x] === 0x20) {
+  $pxa('Z_04:2474', ObjType, x);
+  if ($br('Z_04:2476', ram[ObjType + x] === 0x20)) {
     // @DrawBoulder
     Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x06, x);
+    $pxa('Z_04:2503', ObjAnimFrame, x);
     DrawObjectNotMirroredAndCheckLinkCollision(ram[ObjAnimFrame + x], x);
-    if (ram[ObjY + x] < 0xf0) return; // L10A10_Exit
+    if ($br('Z_04:2509', ram[ObjY + x] < 0xf0)) return; // L10A10_Exit
     ram[ActiveBoulders]--;
     return DestroyMonster(x);
   }
   a = ram[ObjState + x];
-  if (a === 0 && ram[ObjTimer + x] >= 0x21) {
+  if (!$br('Z_04:2482', a !== 0) && !$br('Z_04:2487', ram[ObjTimer + x] < 0x21)) {
     Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x10, x);
+    $pxa('Z_04:2494', ObjAnimFrame, x);
     a = ram[ObjAnimFrame + x];
   }
   // @DrawTektite
@@ -177,15 +193,17 @@ export function Jumper_AnimateAndCheckCollisions(x) {
 /** Jumper_GetKind (Z_04). X = jumper. @returns Y: 0 blue tektite, 1 red tektite, 2 boulder */
 export function Jumper_GetKind(x) {
   // Jumper_GetKind (Z_04)
+  $pxa('Z_04:2522', ObjType, x);
   let y = (ram[ObjType + x] - 0x0d) & 0xff;
-  if (y >= 0x02) y = 0x02;
+  if (!$br('Z_04:2527', y < 0x02)) y = 0x02;
   return y; // L10A10_Exit
 }
 
 /** Jumper_PointBoulderDownward (Z_04). X = object: a boulder's direction always goes down. */
 export function Jumper_PointBoulderDownward(x) {
   // Jumper_PointBoulderDownward (Z_04)
-  if (ram[ObjType + x] !== 0x20) return;
+  $pxa('Z_04:2534', ObjType, x);
+  if ($br('Z_04:2536', ram[ObjType + x] !== 0x20)) return;
   ram[ObjDir + x] = (ram[ObjDir + x] & 0x03) | 0x04;
 }
 
@@ -197,13 +215,17 @@ export function Jumper_MoveY(a, x, y) {
   // Jumper_MoveY (Z_04)
   ram[0x00] = a;
   ram[0x02] = y;
+  $pxa('Z_04:2554', Jumper_ObjSpeedWholeY, x);
   ram[ObjY + x] = cpu.adc(ram[Jumper_ObjSpeedWholeY + x], ram[ObjY + x]);
   cpu.c = 0;
+  $pxa('Z_04:2559', Jumper_ObjSpeedFracY, x);
   ram[Jumper_ObjSpeedFracY + x] = cpu.adc(ram[Jumper_ObjSpeedFracY + x], ram[0x00]);
+  $pxa('Z_04:2565', Jumper_ObjSpeedWholeY, x);
   a = cpu.adc(ram[Jumper_ObjSpeedWholeY + x], 0x00);
   ram[Jumper_ObjSpeedWholeY + x] = a;
-  if ((a - ram[0x02]) & 0x80) return; // CMP / BMI L10A52_Exit
-  if (ram[Jumper_ObjSpeedFracY + x] < 0x80) return;
+  if ($br('Z_04:2576', ((a - ram[0x02]) & 0x80) !== 0)) return; // CMP / BMI L10A52_Exit
+  $pxa('Z_04:2579', Jumper_ObjSpeedFracY, x);
+  if ($br('Z_04:2581', ram[Jumper_ObjSpeedFracY + x] < 0x80)) return;
   ram[Jumper_ObjSpeedWholeY + x] = ram[0x02];
   return Jumper_ResetVSpeedFrac(x); // falls through
 }

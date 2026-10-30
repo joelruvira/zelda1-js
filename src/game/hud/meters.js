@@ -1,6 +1,7 @@
 // Hearts refill and rupee counter (Z_01, Z_05). Package P11.
 
 import { ram } from '../../core/ram.js';
+import { $br } from '../../core/timing.js';
 import {
   TileBufSelector, DynTileBuf, InvRupees, Items, FrameCounter, RupeesToAdd, RupeesToSubtract,
   Tune0Request, World_IsFillingHearts, HeartPartial, HeartValues, SwordBlocked, Paused,
@@ -15,24 +16,24 @@ import { CompareHeartsToContainers } from '../items/take.js';
  */
 export function World_ChangeRupees() {
   // World_ChangeRupees (Z_01)
-  if (ram[TileBufSelector] !== 0) return; // L6506_Exit
-  if ((ram[DynTileBuf] & 0x80) === 0) return;
+  if ($br('Z_01:2839', ram[TileBufSelector] !== 0)) return; // L6506_Exit
+  if ($br('Z_01:2841', (ram[DynTileBuf] & 0x80) === 0)) return;
   // Reset RupeesToAdd (rupees = $FF) or RupeesToSubtract (rupees = 0).
   let y = 0x27; // RupeesToSubtract item slot
   const a = ram[InvRupees];
-  let reset = a === 0;
+  let reset = $br('Z_01:2849', a === 0);
   if (!reset) {
     y = 0x26; // RupeesToAdd item slot
-    reset = a === 0xff;
+    reset = !$br('Z_01:2852', a !== 0xff);
   }
   if (reset) ram[Items + y] = 0x00;
-  if (ram[FrameCounter] & 0x01) return;
-  if (ram[RupeesToAdd] !== 0) {
+  if ($br('Z_01:2860', (ram[FrameCounter] & 0x01) !== 0)) return;
+  if (!$br('Z_01:2862', ram[RupeesToAdd] === 0)) {
     ram[RupeesToAdd]--;
     ram[InvRupees]++;
     ram[Tune0Request] = 0x10; // "heart taken" tune
   }
-  if (ram[RupeesToSubtract] !== 0) {
+  if (!$br('Z_01:2873', ram[RupeesToSubtract] === 0)) {
     ram[RupeesToSubtract]--;
     ram[InvRupees]--;
     ram[Tune0Request] = 0x10;
@@ -43,16 +44,16 @@ export function World_ChangeRupees() {
 /** World_FillHearts (Z_05): while filling, add 6 to HeartPartial per frame and complete hearts. */
 export function World_FillHearts() {
   // World_FillHearts (Z_05)
-  if (ram[World_IsFillingHearts] === 0) return 0;
+  if ($br('Z_05:6765', ram[World_IsFillingHearts] === 0)) return 0;
   ram[Tune0Request] = 0x10; // "heart taken" tune
   const a = ram[HeartPartial];
-  if (a < 0xf8) {
+  if (!$br('Z_05:6770', a >= 0xf8)) {
     ram[HeartPartial] = a + 0x06;
     return;
   }
   // @CompleteHeart
   ram[HeartPartial] = 0x00;
-  if (CompareHeartsToContainers() !== ram[0x00]) {
+  if ($br('Z_05:6780', CompareHeartsToContainers() !== ram[0x00])) {
     ram[HeartValues]++; // @IncHearts
     return;
   }

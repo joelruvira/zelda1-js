@@ -2,6 +2,7 @@
 // (dark rooms, cellars, caves). Package P13, Z_01 (BANK_01_CODE, runs from WRAM).
 
 import { ram, peek } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { ObjTimer, FadeCycle, DynTileBufLen, DynTileBuf, LevelInfo_PaletteCycles } from '../../core/vars.js';
 
 /**
@@ -12,9 +13,9 @@ import { ObjTimer, FadeCycle, DynTileBufLen, DynTileBuf, LevelInfo_PaletteCycles
 export function AnimateWorldFading() {
   // AnimateWorldFading (Z_01)
   let a = ram[ObjTimer + 12];
-  if (a !== 0) return a; // @Exit: only delay
+  if ($br('Z_01:4747', a !== 0)) return a; // @Exit: only delay
   a = ram[FadeCycle];
-  if (a & 0x80) a ^= 0x83; // reverse fade
+  if (!$br('Z_01:4749', (a & 0x80) === 0)) a ^= 0x83; // reverse fade
   ram[0x00] = a; // map cycle XY to offset X0 + Y*8
   let y = ((((a << 3) & 0xff) + ram[0x00]) & 0xff) & 0xfc;
 
@@ -28,15 +29,16 @@ export function AnimateWorldFading() {
   x = (x + 1) & 0xff;
   do {
     // @CopyPalette
+    $pxa('Z_01:4777', LevelInfo_PaletteCycles, y);
     ram[DynTileBuf + x] = peek(LevelInfo_PaletteCycles + y);
     y = (y + 1) & 0xff;
     x = (x + 1) & 0xff;
     ram[0x00]--;
-  } while (ram[0x00] !== 0);
+  } while ($br('Z_01:4782', ram[0x00] !== 0));
   ram[DynTileBuf + x] = 0xff; // end marker
   ram[DynTileBufLen] = x;
   ram[FadeCycle]++;
-  if ((ram[FadeCycle] & 0x0f) === 0x04) return 0x00; // @ReturnDone
+  if ($br('Z_01:4790', (ram[FadeCycle] & 0x0f) === 0x04)) return 0x00; // @ReturnDone
   ram[ObjTimer + 12] = 0x0a; // update every 10 frames
   return 0x0a;
 }

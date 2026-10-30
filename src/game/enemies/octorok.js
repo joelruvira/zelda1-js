@@ -2,6 +2,7 @@
 // X = object slot in every routine.
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjQSpeedFrac, ObjTimer, ObjAnimFrame, ObjAnimCounter, ObjType, ObjTurnRate, ObjDir,
 } from '../../core/vars.js';
@@ -16,6 +17,7 @@ import { CheckMonsterCollisions } from '../combat/collisions.js';
 /** InitSlowOctorockOrGhini (Z_04). X = object: q-speed $20. */
 export function InitSlowOctorockOrGhini(x) {
   // InitSlowOctorockOrGhini (Z_04)
+  $br('Z_04:1863', true);
   return initOctorockWithQSpeed(0x20, x); // BNE :+
 }
 
@@ -42,33 +44,41 @@ function initOctorockWithQSpeed(a, x) {
 export function UpdateOctorock(x) {
   // UpdateOctorock (Z_04)
   let a = 0xa0;
-  if (ram[ObjType + x] < 0x09) a = 0x70;
+  $pxa('Z_04:2973', ObjType, x);
+  if (!$br('Z_04:2975', ram[ObjType + x] >= 0x09)) a = 0x70;
   ram[ObjTurnRate + x] = a;
   Wanderer_TargetPlayer(x);
   a = 0x20;
+  $pxa('Z_04:2984', ObjType, x);
   const t = ram[ObjType + x];
-  if (t !== 0x07 && t !== 0x09) a = 0x40; // ASL
+  if (!$br('Z_04:2986', t === 0x07) && !$br('Z_04:2988', t === 0x09)) a = 0x40; // ASL
   // @Shoot
   _TryShooting(a, x, 0x53);
   Anim_FetchObjPosForSpriteDescriptor(x);
   const y = ram[ObjDir + x];
-  if (y & 0x0c) {
-    a = y !== 0x08 ? 0x02 : 0x01;
+  if (!$br('Z_04:3001', (y & 0x0c) === 0)) {
+    if ($br('Z_04:3004', y !== 0x08)) a = 0x02;
+    else {
+      a = 0x01;
+      $br('Z_04:3008', true); // BNE @SaveOffset
+    }
   } else {
     // @CheckHorizontal
-    if (y === 0x01) ram[0x0f]++;
+    if (!$br('Z_04:3013', y !== 0x01)) ram[0x0f]++;
     a = 0x00;
   }
   // @SaveOffset
   let pushed = a; // PHA
   ram[ObjAnimCounter + x]--;
-  if (ram[ObjAnimCounter + x] === 0) {
+  if (!$br('Z_04:3024', ram[ObjAnimCounter + x] !== 0)) {
     ram[ObjAnimCounter + x] = 0x06;
+    $pxa('Z_04:3037', ObjAnimFrame, x);
     ram[ObjAnimFrame + x] = 0x03 ^ ram[ObjAnimFrame + x]; // LSR (6 -> 3) / EOR
   }
   // @CalcFinalOffset
+  $pxa('Z_04:3044', ObjAnimFrame, x);
   pushed = (pushed + ram[ObjAnimFrame + x]) & 0xff;
-  if ((ram[ObjDir + x] & 0x0c) === 0) {
+  if (!$br('Z_04:3050', (ram[ObjDir + x] & 0x0c) !== 0)) {
     DrawObjectNotMirrored(pushed, x);
     return CheckMonsterCollisions(x);
   }

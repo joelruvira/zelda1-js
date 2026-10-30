@@ -20,6 +20,7 @@ import {
   DrawObjectMirrored, DrawObjectNotMirrored,
 } from '../draw/anim.js';
 import { Anim_SetSpriteDescriptorLevelPaletteRow } from './dodongo.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 // $0412: the speed accumulator (Manhandla_ObjSpeedAccum); the asm names it by address here.
 const SPEED_ACCUM = 0x0412;
@@ -32,7 +33,9 @@ export function InitDigdogger1(x) {
   // InitDigdogger1 (Z_04)
   ram[SampleRequest] = 0x40; // Digdogger/Manhandla/Patra roar
   const y = ram[Random + x] & 0x07;
-  ram[ObjDir + x] = table(bus.rom, 'Directions8').byte(y);
+  const d8 = table(bus.rom, 'Directions8');
+  $pxa('Z_04:4864', d8.addr, y);
+  ram[ObjDir + x] = d8.byte(y);
   ram[Digdogger_ObjSpeedFrac + x] = 0x3f;
   ram[Digdogger_ObjTargetSpeedFrac + x] = 0x80;
   ram[ChildDigdoggerCount] = 0x03;
@@ -57,20 +60,22 @@ export function InitDigdogger2(x) {
 export function L_Digdogger_AfterFlute(x, y) {
   // L_Digdogger_AfterFlute (Z_04)
   y = (y - 1) & 0xff;
-  if (y === 0) {
-    if (ram[Digdogger_ObjIsChild + x] !== 0) return L_Digdogger_Turn(x);
+  if (!$br('Z_04:5168', y !== 0)) {
+    $pxa('Z_04:5173', Digdogger_ObjIsChild, x);
+    if ($br('Z_04:5174', ram[Digdogger_ObjIsChild + x] !== 0)) return L_Digdogger_Turn(x);
     ram[ObjTimer + x] = 0x40;
     ram[UsedFlute]++;
     return CheckBigDigdoggerCollisions(x);
   }
   // @SplitUp
   let a = ram[ObjTimer + x];
-  if (a !== 0) {
+  if (!$br('Z_04:5186', a === 0)) {
     // Unverified code 1159D.
-    if ((a & 0x07) === 0) {
+    if (!$br('Z_04:5197', (a & 0x07) !== 0)) {
+      $pxa('Z_04:5198', Digdogger_ObjIsChild, x);
       a = ram[Digdogger_ObjIsChild + x] ^ 0x01;
       ram[Digdogger_ObjIsChild + x] = a;
-      if (a === 0) return CheckBigDigdoggerCollisions(x);
+      if ($br('Z_04:5201', a === 0)) return CheckBigDigdoggerCollisions(x);
     }
     return L_Digdogger_DrawAsLittle(x);
   }
@@ -91,7 +96,7 @@ export function L_Digdogger_AfterFlute(x, y) {
     ram[ObjX + x] = ram[ObjX + 1];
     ram[ObjY + x] = ram[ObjY + 1];
     ram[0x00]--;
-  } while (ram[0x00] !== 0);
+  } while ($br('Z_04:5245', ram[0x00] !== 0));
   x = parent; // PLA / TAX
   PlayBossDeathCry();
   ram[ObjType + x] = 0x00;
@@ -111,9 +116,9 @@ export function L_Digdogger_TurnTowardLink(x) {
  */
 export function UpdateDigdogger(x) {
   // UpdateDigdogger (Z_04)
-  if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return L_Digdogger_DrawAndCheckCollisions(x);
+  if ($br('Z_04:5272', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return L_Digdogger_DrawAndCheckCollisions(x);
   const y = ram[UsedFlute];
-  if (y !== 0) return L_Digdogger_AfterFlute(x, y);
+  if ($br('Z_04:5277', y !== 0)) return L_Digdogger_AfterFlute(x, y);
   return L_Digdogger_Turn(x); // falls through
 }
 
@@ -121,9 +126,9 @@ export function UpdateDigdogger(x) {
 export function L_Digdogger_Turn(x) {
   // L_Digdogger_Turn (Z_04)
   Digdogger_ChangeSpeed(x);
-  if (ram[ObjTimer + x] === 0) {
+  if (!$br('Z_04:5285', ram[ObjTimer + x] !== 0)) {
     ram[ObjTimer + x] = 0x10;
-    if (ram[Random + x] >= 0x80) return L_Digdogger_TurnTowardLink(x);
+    if ($br('Z_04:5290', ram[Random + x] >= 0x80)) return L_Digdogger_TurnTowardLink(x);
     TurnRandomlyDir8(x);
   }
   return L_Digdogger_Move(x); // falls through
@@ -139,7 +144,8 @@ export function L_Digdogger_Move(x) {
 /** L_Digdogger_DrawAndCheckCollisions (Z_04, part of L_Digdogger_Move). X = object. */
 export function L_Digdogger_DrawAndCheckCollisions(x) {
   // L_Digdogger_DrawAndCheckCollisions (Z_04)
-  if (ram[Digdogger_ObjIsChild + x] === 0) return CheckBigDigdoggerCollisions(x);
+  $pxa('Z_04:5298', Digdogger_ObjIsChild, x);
+  if ($br('Z_04:5299', ram[Digdogger_ObjIsChild + x] === 0)) return CheckBigDigdoggerCollisions(x);
   BoundFlyer(x);
   CheckMonsterCollisions(x);
   return Digdogger_Draw(x);
@@ -159,13 +165,17 @@ export function CheckBigDigdoggerCollisions(x) {
   const offY = table(bus.rom, 'DigdoggerCornerOffsetsY');
   do {
     // @LoopCornerCollision
+    $pxa('Z_04:5322', Digdogger_ObjCurPart, x);
     const y = ram[Digdogger_ObjCurPart + x];
+    $pxa('Z_04:5327', offX.addr, y);
     ram[ObjX + x] = ram[ObjX + x] + offX.byte(y);
+    $pxa('Z_04:5331', offY.addr, y);
     ram[ObjY + x] = ram[ObjY + x] + offY.byte(y);
     BoundFlyer(x);
     CheckMonsterCollisions(x);
     ram[Digdogger_ObjCurPart + x]++;
-  } while (ram[Digdogger_ObjCurPart + x] < 0x04);
+    $pxa('Z_04:5340', Digdogger_ObjCurPart, x);
+  } while ($br('Z_04:5342', ram[Digdogger_ObjCurPart + x] < 0x04));
   ram[ObjY + x] = savedY; // PLA
   ram[ObjX + x] = savedX; // PLA
   Digdogger_Draw(x);
@@ -182,7 +192,9 @@ export function L_Digdogger_DrawAsLittle(x) {
   const savedY = ram[ObjY + x]; // PHA
   ram[ObjY + x] = savedY + 0x08;
   ram[ObjX + x] = ram[ObjX + x] + 0x08;
+  $pxa('Z_04:5368', Digdogger_ObjIsChild, x);
   const isChild = ram[Digdogger_ObjIsChild + x]; // PHA
+  $pxa('Z_04:5370', ObjType, x);
   const type = ram[ObjType + x]; // PHA
   ram[ObjType + x] = 0x18;
   ram[Digdogger_ObjIsChild + x] = 0x01;
@@ -197,6 +209,7 @@ export function L_Digdogger_DrawAsLittle(x) {
 /** Digdogger_ChangeSpeed (Z_04). X = object: TableJump by the speed flag (speed up, slow down). */
 export function Digdogger_ChangeSpeed(x) {
   // Digdogger_ChangeSpeed (Z_04)
+  $pxa('Z_04:5395', Digdogger_ObjSpeedFlag, x);
   return tableJump(label('Digdogger_ChangeSpeed_JumpTable').addr, ram[Digdogger_ObjSpeedFlag + x], [
     () => Digdogger_SpeedUp(x),
     () => Digdogger_SlowDown(x),
@@ -207,9 +220,11 @@ export function Digdogger_ChangeSpeed(x) {
 export function Digdogger_SpeedUp(x) {
   // Digdogger_SpeedUp (Z_04)
   ram[Digdogger_ObjSpeedFrac + x]++;
-  if (ram[Digdogger_ObjSpeedFrac + x] === 0) ram[Digdogger_ObjSpeedWhole + x]++;
-  if (ram[Digdogger_ObjSpeedFrac + x] !== ram[Digdogger_ObjTargetSpeedFrac + x]) return; // L116EA_Exit
-  if (ram[Digdogger_ObjSpeedWhole + x] !== ram[Digdogger_ObjTargetSpeedWhole + x]) return;
+  if (!$br('Z_04:5405', ram[Digdogger_ObjSpeedFrac + x] !== 0)) ram[Digdogger_ObjSpeedWhole + x]++;
+  $pxa('Z_04:5409', Digdogger_ObjSpeedFrac, x); $pxa('Z_04:5410', Digdogger_ObjTargetSpeedFrac, x);
+  if ($br('Z_04:5411', ram[Digdogger_ObjSpeedFrac + x] !== ram[Digdogger_ObjTargetSpeedFrac + x])) return; // L116EA_Exit
+  $pxa('Z_04:5412', Digdogger_ObjSpeedWhole, x); $pxa('Z_04:5413', Digdogger_ObjTargetSpeedWhole, x);
+  if ($br('Z_04:5414', ram[Digdogger_ObjSpeedWhole + x] !== ram[Digdogger_ObjTargetSpeedWhole + x])) return;
   ram[Digdogger_ObjSpeedFlag + x]++;
   return SetTargetSpeed(0x40, x);
 }
@@ -218,9 +233,12 @@ export function Digdogger_SpeedUp(x) {
 export function Digdogger_SlowDown(x) {
   // Digdogger_SlowDown (Z_04)
   ram[Digdogger_ObjSpeedFrac + x]--;
-  if (ram[Digdogger_ObjSpeedFrac + x] === 0xff) ram[Digdogger_ObjSpeedWhole + x]--; // unverified 116C2
-  if (ram[Digdogger_ObjSpeedFrac + x] !== ram[Digdogger_ObjTargetSpeedFrac + x]) return; // L116EA_Exit
-  if (ram[Digdogger_ObjSpeedWhole + x] !== ram[Digdogger_ObjTargetSpeedWhole + x]) return;
+  $pxa('Z_04:5426', Digdogger_ObjSpeedFrac, x);
+  if (!$br('Z_04:5428', ram[Digdogger_ObjSpeedFrac + x] !== 0xff)) ram[Digdogger_ObjSpeedWhole + x]--; // unverified 116C2
+  $pxa('Z_04:5434', Digdogger_ObjSpeedFrac, x); $pxa('Z_04:5435', Digdogger_ObjTargetSpeedFrac, x);
+  if ($br('Z_04:5436', ram[Digdogger_ObjSpeedFrac + x] !== ram[Digdogger_ObjTargetSpeedFrac + x])) return; // L116EA_Exit
+  $pxa('Z_04:5437', Digdogger_ObjSpeedWhole, x); $pxa('Z_04:5438', Digdogger_ObjTargetSpeedWhole, x);
+  if ($br('Z_04:5439', ram[Digdogger_ObjSpeedWhole + x] !== ram[Digdogger_ObjTargetSpeedWhole + x])) return;
   ram[Digdogger_ObjSpeedFlag + x]--;
   return SetTargetSpeed(0x80, x); // falls through
 }
@@ -230,7 +248,8 @@ export function SetTargetSpeed(a, x) {
   // SetTargetSpeed (Z_04)
   ram[Digdogger_ObjTargetSpeedFrac + x] = a;
   ram[Digdogger_ObjTargetSpeedWhole + x] = 0x00;
-  if (ram[Digdogger_ObjIsChild + x] === 0) return; // L116EA_Exit
+  $pxa('Z_04:5453', Digdogger_ObjIsChild, x);
+  if ($br('Z_04:5454', ram[Digdogger_ObjIsChild + x] === 0)) return; // L116EA_Exit
   ram[Digdogger_ObjTargetSpeedWhole + x]++;
 }
 
@@ -246,7 +265,8 @@ export function L116EA_Exit() {
  */
 export function Digdogger_Move(x) {
   // Digdogger_Move (Z_04)
-  moveBySpeedAccum(x, Digdogger_ObjSpeedFrac, Digdogger_ObjSpeedWhole, SPEED_ACCUM);
+  moveBySpeedAccum(x, Digdogger_ObjSpeedFrac, Digdogger_ObjSpeedWhole, SPEED_ACCUM,
+    ['Z_04:5472', 'Z_04:5475', 'Z_04:5479', 'Z_04:5495', 'Z_04:5506', 'Z_04:5516', 'Z_04:5526']);
   return Anim_FetchObjPosForSpriteDescriptor(x); // @End
 }
 
@@ -254,24 +274,26 @@ export function Digdogger_Move(x) {
  * The movement shared by Digdogger_Move and Manhandla_Move (the asm has two identical copies, on the
  * same arrays): from the accumulator to the @Up step. Leaves [02], [03] and the carry as the original.
  */
-export function moveBySpeedAccum(x, frac, whole, accum) {
+export function moveBySpeedAccum(x, frac, whole, accum, refs) {
   cpu.c = 0;
+  $pxa(refs[0], frac, x); $pxa(refs[1], accum, x);
   ram[accum + x] = cpu.adc(ram[frac + x] & 0xe0, ram[accum + x]);
+  $pxa(refs[2], whole, x);
   ram[0x03] = cpu.adc(ram[whole + x], 0x00);
   ram[0x02] = 0xa1;
-  if (ram[ObjDir + x] & ram[0x02]) {
+  if (!$br(refs[3], (ram[ObjDir + x] & ram[0x02]) === 0)) {
     cpu.c = 0;
     ram[ObjX + x] = cpu.adc(ram[ObjX + x], ram[0x03]);
   }
   // @Left
   cpu.aslMem(0x02); // bit 7 of $A1 sets carry
-  if (ram[ObjDir + x] & ram[0x02]) ram[ObjX + x] = cpu.sbc(ram[ObjX + x], ram[0x03]);
+  if (!$br(refs[4], (ram[ObjDir + x] & ram[0x02]) === 0)) ram[ObjX + x] = cpu.sbc(ram[ObjX + x], ram[0x03]);
   // @Down
   cpu.aslMem(0x02); // clears carry
-  if (ram[ObjDir + x] & ram[0x02]) ram[ObjY + x] = cpu.adc(ram[ObjY + x], ram[0x03]);
+  if (!$br(refs[5], (ram[ObjDir + x] & ram[0x02]) === 0)) ram[ObjY + x] = cpu.adc(ram[ObjY + x], ram[0x03]);
   // @Up
   cpu.aslMem(0x02); // sets carry
-  if (ram[ObjDir + x] & ram[0x02]) ram[ObjY + x] = cpu.sbc(ram[ObjY + x], ram[0x03]);
+  if (!$br(refs[6], (ram[ObjDir + x] & ram[0x02]) === 0)) ram[ObjY + x] = cpu.sbc(ram[ObjY + x], ram[0x03]);
 }
 
 /**
@@ -281,20 +303,27 @@ export function moveBySpeedAccum(x, frac, whole, accum) {
 export function Digdogger_Draw(x) {
   // Digdogger_Draw (Z_04)
   Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x06, x);
-  if (ram[Digdogger_ObjIsChild + x] !== 0) {
+  $pxa('Z_04:5548', Digdogger_ObjIsChild, x);
+  if ($br('Z_04:5549', ram[Digdogger_ObjIsChild + x] !== 0)) {
     // @DrawLittle
     Anim_SetSpriteDescriptorLevelPaletteRow();
+    $pxa('Z_04:5593', ObjAnimFrame, x);
     return DrawObjectMirrored(ram[ObjAnimFrame + x], x);
   }
   const offX = table(bus.rom, 'DigdoggerSpriteOffsetsX');
   const offY = table(bus.rom, 'DigdoggerSpriteOffsetsY');
   const attrs = table(bus.rom, 'DigdoggerSpriteAttrs');
-  for (let y = 0x00; y !== 0x04; y++) {
+  for (let y = 0x00; ;) {
     // @LoopPart
+    $pxa('Z_04:5559', offX.addr, y);
     ram[0x00] = ram[ObjX + x] + offX.byte(y);
+    $pxa('Z_04:5565', offY.addr, y);
     ram[0x01] = ram[ObjY + x] + offY.byte(y);
+    $pxa('Z_04:5570', attrs.addr, y);
     Anim_SetSpriteDescriptorAttributes(attrs.byte(y));
     ram[0x0f] = y & 0x01;
     DrawObjectNotMirrored(0x00, x);
+    y++;
+    if (!$br('Z_04:5587', y !== 0x04)) break;
   }
 }

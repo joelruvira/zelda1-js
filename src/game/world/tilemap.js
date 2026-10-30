@@ -11,6 +11,7 @@ import {
 } from '../../core/vars.js';
 import { AddToInt16At0, Add1ToInt16At0 } from '../util/int16.js';
 import { WriteSquareOW } from './overworld.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * MapScreenPosToPpuAddr (Z_01, WRAM): [$02] = Y, [$03] = X.
@@ -53,7 +54,7 @@ export function ChangeTileObjTiles(a, x) {
   ram[DynTileBuf + 4 + x] = a;
   ram[DynTileBuf + 8 + x] = a;
   ram[DynTileBuf + 9 + x] = a;
-  if (a >= 0x46 && a < 0xf3) {
+  if (!$br('Z_07:1189', a < 0x46) && !$br('Z_07:1191', a >= 0xf3)) {
     a = (a + 0x02) & 0xff; // CLC / ADC #$02
     ram[DynTileBuf + 8 + x] = a;
     ram[DynTileBuf + 9 + x] = a;
@@ -68,7 +69,7 @@ export function ChangeTileObjTiles(a, x) {
   x = saved; // PLA / TAX
   switchBank(5);
   ChangePlayMapSquareOW(x);
-  if (ram[ReturnToBank4] !== 0) switchBank(4);
+  if (!$br('Z_07:1225', ram[ReturnToBank4] === 0)) switchBank(4);
   ram[ReturnToBank4] = 0;
   return 0;
 }
@@ -82,7 +83,7 @@ export function FillTileMap() {
   do {
     write(word(0x00) + y, ram[0x0a]);
     Add1ToInt16At0();
-  } while (ram[0x00] !== 0xf0 || ram[0x01] !== 0x67);
+  } while ($br('Z_07:1248', ram[0x00] !== 0xf0) || $br('Z_07:1251', ram[0x01] !== 0x67));
   return 0x67;
 }
 
@@ -106,6 +107,7 @@ export function ChangePlayMapSquareOW(x) {
   let a = ram[ObjX + x] & 0xf0;
   x = a >> 2;
   ram[0x00] = cols.byte(x);
+  $pxa('Z_05:6151', cols.addr + 1, x);
   ram[0x01] = cols.byte(x + 1);
   x = saved;
   a = ram[ObjY + x] & 0xf0;
@@ -114,13 +116,14 @@ export function ChangePlayMapSquareOW(x) {
   const y = 0;
   x = 0x10;
   a = ram[0x05];
-  if (a < 0x27 || a >= 0xf3) {
+  if ($br('Z_05:6186', a < 0x27) || !$br('Z_05:6188', a < 0xf3)) {
     const prim = table(bus.rom, 'PrimarySquaresOW');
     x = 0x0e;
     do {
-      if (a === prim.byte(x)) break;
+      $pxa('Z_05:6192', prim.addr, x);
+      if ($br('Z_05:6193', a === prim.byte(x))) break;
       x--;
-    } while (x !== 0);
+    } while ($br('Z_05:6195', x !== 0));
   }
   // @Write
   ram[0x0d] = x;
@@ -143,18 +146,19 @@ export function CopyColumnToTileBuf() {
   do {
     AddToInt16At0(0x16);
     x = (x - 1) & 0xff;
-  } while (x < 0x80);
+  } while ($br('Z_05:5668', x < 0x80));
   ram[DynTileBuf + 2 + y] = 0x96;
   ram[DynTileBuf + 25 + y] = x;
   x = y;
   y = 0;
   ram[0x06] = 0;
   do {
+    $pxa('Z_05:5678', ram[0x00], y);
     ram[DynTileBuf + 3 + x] = read(word(0x00) + y);
     Add1ToInt16At0();
     x = (x + 1) & 0xff;
     ram[0x06]++;
-  } while (ram[0x06] < 0x16);
+  } while ($br('Z_05:5685', ram[0x06] < 0x16));
   x = (x + 3) & 0xff;
   ram[DynTileBufLen] = x;
 }
@@ -166,25 +170,26 @@ export function CopyRowToTileBuf() {
   let x = ram[CurRow];
   const sum = x + 0x30;
   ram[0x00] = sum & 0xff;
-  if (sum > 0xff) ram[0x01]++; // unverified in the asm (16932)
+  if (!$br('Z_05:5702', sum <= 0xff)) ram[0x01]++; // unverified in the asm (16932)
   ram[DynTileBuf] = 0x20;
   ram[DynTileBuf + 1] = 0xe0;
   do {
     // @Add20H
     const s = ram[DynTileBuf + 1] + 0x20;
     ram[DynTileBuf + 1] = s;
-    if (s > 0xff) ram[DynTileBuf]++;
+    if (!$br('Z_05:5719', s <= 0xff)) ram[DynTileBuf]++;
     x = (x - 1) & 0xff;
-  } while (x < 0x80);
+  } while ($br('Z_05:5723', x < 0x80));
   ram[DynTileBuf + 2] = 0x20;
   ram[DynTileBuf + 35] = x;
   x = 0;
   const y = 0;
   do {
+    $pxa('Z_05:5732', ram[0x00], y);
     ram[DynTileBuf + 3 + x] = read(word(0x00) + y);
     AddToInt16At0(0x16);
     x++;
-  } while (x < 0x20);
+  } while ($br('Z_05:5738', x < 0x20));
   ram[DynTileBufLen] = 0x23;
   return 0x23;
 }
@@ -196,7 +201,7 @@ export function CopyRowToTileBuf() {
 export function CopyNextRowToTransferBufAndAdvanceSubmodeWhenDone() {
   // CopyNextRowToTransferBufAndAdvanceSubmodeWhenDone (Z_05)
   const c = CopyNextRowToTransferBuf();
-  if (c) ram[GameSubmode]++; // BCS to LayoutRoom_SubmodeTask's INC GameSubmode
+  if ($br('Z_05:6219', c !== 0)) ram[GameSubmode]++; // BCS to LayoutRoom_SubmodeTask's INC GameSubmode
   return c;
 }
 

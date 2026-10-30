@@ -5,23 +5,44 @@
 
 import { loadRom, loadSymbols } from './core/rom.js';
 import { createMachine } from './core/machine.js';
-import { runFrame } from './core/loop.js';
+import { runFrame, runReset } from './core/loop.js';
+import { setupTiming, timing } from './core/timing.js';
 import { cpu } from './core/ram.js';
 import { createGameLogic } from './game/index.js';
 
 /**
- * @param {{rom: Uint8Array|ArrayBuffer, sram?: Uint8Array|null, powerOnFill?: number}} o
+ * @param {{rom: Uint8Array|ArrayBuffer, sram?: Uint8Array|null, powerOnFill?: number,
+ *   timing?: 'off'|'jsnes'|'hardware', strict?: boolean, inputFor?: (nmi: number) => [number, number]}} o
  *   rom: the whole .nes file (iNES header included).
+ *   timing: cycle tracker (core/timing.js, docs/TIMING.md). 'jsnes' (default, or env ZELDA_TIMING)
+ *     reproduces the CI oracle; 'off' = the old zero-time model. strict: a misplaced/missing breadcrumb throws TimingError.
+ *   inputFor: input of the n-th NMI (1-based) when an NMI starts inside another one (nested NMI);
+ *     without it that NMI reads the stepFrame() input.
  */
-export async function createGame({ rom, sram = null, powerOnFill = 0x00 } = {}) {
+export async function createGame({ rom, sram = null, powerOnFill = 0x00, timing: mode, strict, inputFor = null } = {}) {
   await loadSymbols();
   const machine = createMachine(loadRom(rom));
+  const env = typeof process !== 'undefined' ? process.env : {};
+  mode ??= env.ZELDA_TIMING || 'jsnes';
+  strict ??= env.ZELDA_TIMING_STRICT === '1';
+  await setupTiming({ rom: machine.rom, mode, strict });
   machine.ram.fill(powerOnFill & 0xff);
   machine.sram.fill(0);
   if (sram) machine.sram.set(sram.subarray(0, 0x2000));
   cpu.reset();
   const logic = createGameLogic();
-  logic.reset(); // IsrReset + RunGame: game.ram is now "frame 0"
+  runReset(machine, logic); // IsrReset + RunGame: game.ram is now "frame 0"
+  let stepInput = [0, 0];
+  const timedLogic = {
+    ...logic,
+    nmi: (n) => {
+      // the n-th NMI reads its own input: stepFrame's, or inputFor(n) for an extra (nested) NMI
+      const inp = n !== undefined && n !== timing.frames + 1 && inputFor ? inputFor(n) : stepInput;
+      machine.input.setOverride(0, inp[0] & 0xff);
+      machine.input.setOverride(1, inp[1] & 0xff);
+      return logic.nmi();
+    },
+  };
   return {
     ram: machine.ram,
     sram: machine.sram,
@@ -33,7 +54,10 @@ export async function createGame({ rom, sram = null, powerOnFill = 0x00 } = {}) 
     stepFrame(p1 = 0, p2 = 0) {
       machine.input.setOverride(0, p1 & 0xff);
       machine.input.setOverride(1, p2 & 0xff);
-      runFrame(machine, logic);
+      stepInput = [p1, p2];
+      runFrame(machine, timedLogic);
     },
+    /** The cycle tracker (core/timing.js) when timing is on. */
+    timing: mode !== 'off' ? timing : null,
   };
 }

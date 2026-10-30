@@ -17,6 +17,7 @@ import { PlayBossHitCryIfNeeded, PlayBossDeathCryIfNeeded } from '../enemies/com
 import { ResetShoveInfo } from '../movement/shove.js';
 import { ShootFireball } from '../enemies/shots.js';
 import { Anim_EndWriteSprite } from '../draw/sprites.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitAquamentus (Z_04). X = boss: invincible to boomerang/fire, roar, placed at ($B0,$80). @returns A = $80 */
 export function InitAquamentus(x) {
@@ -34,7 +35,7 @@ export function InitAquamentus(x) {
  */
 export function UpdateAquamentus(x) {
   // UpdateAquamentus (Z_04)
-  if (ram[InvClock] === 0) {
+  if (!$br('Z_04:5598', ram[InvClock] !== 0)) {
     Aquamentus_Move(x);
     x = Aquamentus_Shoot(x);
   }
@@ -57,20 +58,22 @@ export function CheckBossHitReaction(x) {
  */
 export function Aquamentus_Move(x) {
   // Aquamentus_Move (Z_04)
-  if (ram[ObjGridOffset + x] === 0) {
+  $pxa('Z_04:5616', ObjGridOffset, x);
+  if (!$br('Z_04:5617', ram[ObjGridOffset + x] !== 0)) {
     const r = ram[Random + x]; // PHA
     ram[ObjGridOffset + x] = (r & 0x0f) | 0x07;
     ram[ObjDir + x] = (r & 0x01) + 1; // PLA / AND #1 / TAY / INY
     return;
   }
   // @Move
-  if ((ram[FrameCounter] & 0x07) !== 0) return; // @Exit
+  if ($br('Z_04:5638', (ram[FrameCounter] & 0x07) !== 0)) return; // @Exit
   const a = ram[ObjX + x];
-  if (a < 0x88) {
+  if (!$br('Z_04:5644', a >= 0x88)) {
+    $br('Z_04:5649', true);
     ram[ObjX + x] = 0x88;
     ram[ObjDir + x] = 0x01;
     ram[ObjGridOffset + x] = 0x07; // @SetRemainingDistance
-  } else if (a >= 0xc8) {
+  } else if (!$br('Z_04:5655', a < 0xc8)) {
     // @CheckRightLimit
     ram[ObjX + x] = 0xc7;
     ram[ObjDir + x] = 0x02;
@@ -78,6 +81,7 @@ export function Aquamentus_Move(x) {
   }
   // @ApplySpeed
   const y = (ram[ObjDir + x] - 1) & 0xff;
+  $pxa('Z_04:5675', table(bus.rom, 'AquamentusSpeeds').addr, y);
   ram[ObjX + x] = ram[ObjX + x] + table(bus.rom, 'AquamentusSpeeds').byte(y);
   ram[ObjGridOffset + x]--;
 }
@@ -90,7 +94,7 @@ export function Aquamentus_Move(x) {
  */
 export function Aquamentus_Shoot(x) {
   // Aquamentus_Shoot (Z_04)
-  if (ram[ObjTimer + x] === 0) {
+  if (!$br('Z_04:5688', ram[ObjTimer + x] !== 0)) {
     ram[ObjTimer + x] = ram[Random + x] | 0x70;
     let { y } = ShootFireball55(x);
     ram[Aquamentus_ObjFireballOffset + y] = 0x00;
@@ -101,10 +105,14 @@ export function Aquamentus_Shoot(x) {
     return x;
   }
   // @SpreadOutFireballs
-  for (x = 0x0b; x >= 0; x--) {
-    if (ram[ObjType + x] !== 0x55) continue;
-    if (ram[FrameCounter] & 0x01) continue;
-    ram[ObjY + x] = ram[ObjY + x] + ram[Aquamentus_ObjFireballOffset + x];
+  for (x = 0x0b; ;) {
+    $pxa('Z_04:5721', ObjType, x);
+    if (!$br('Z_04:5723', ram[ObjType + x] !== 0x55) && !$br('Z_04:5728', (ram[FrameCounter] & 0x01) !== 0)) {
+      $pxa('Z_04:5733', Aquamentus_ObjFireballOffset, x);
+      ram[ObjY + x] = ram[ObjY + x] + ram[Aquamentus_ObjFireballOffset + x];
+    }
+    x--;
+    if (!$br('Z_04:5739', x >= 0)) break;
   }
   return ram[CurObjIndex];
 }
@@ -126,29 +134,35 @@ export function Aquamentus_Draw(x) {
   const offY = table(bus.rom, 'AquamentusSpriteOffsetsY');
   const offX = table(bus.rom, 'AquamentusSpriteOffsetsX');
   let y = 0x05;
-  if ((ram[FrameCounter] & 0x10) === 0) y = 0x0b;
+  if (!$br('Z_04:5770', (ram[FrameCounter] & 0x10) !== 0)) y = 0x0b;
   ram[0x0a] = y;
   ram[0x0b] = 0x05;
   do {
     // @LoopSprite
     y = ram[0x0b];
+    $pxa('Z_04:5786', offX.addr, y);
     ram[0x00] = ram[ObjX + x] + offX.byte(y);
+    $pxa('Z_04:5793', offY.addr, y);
     ram[0x01] = ram[ObjY + x] + offY.byte(y);
+    $pxa('Z_04:5804', ObjInvincibilityTimer, x);
     ram[0x03] = (ram[ObjInvincibilityTimer + x] & 0x03) ^ 0x03;
     y = ram[0x0a];
+    $pxa('Z_04:5812', tiles.addr, y);
     let a = tiles.byte(y);
-    if (a === tiles.byte(0) && ram[ObjTimer + x] < 0x20) a = 0xc0; // open mouth
+    if (!$br('Z_04:5814', a !== tiles.byte(0)) && !$br('Z_04:5823', ram[ObjTimer + x] >= 0x20)) a = 0xc0; // open mouth
     // @WriteSprite
     WriteBossSprite(a);
     ram[0x0a]--;
     ram[0x0b]--;
-  } while (!(ram[0x0b] & 0x80));
+  } while ($br('Z_04:5833', !(ram[0x0b] & 0x80)));
 }
 
 /** WriteBossSprite (Z_04). A = tile, [00] X, [01] Y, [03] attributes. @returns A = new RollingSpriteIndex */
 export function WriteBossSprite(a) {
   // WriteBossSprite (Z_04)
-  const y = table(bus.rom, 'SpriteOffsets').byte(ram[RollingSpriteIndex]);
+  const so = table(bus.rom, 'SpriteOffsets');
+  $pxa('Z_04:5846', so.addr, ram[RollingSpriteIndex]);
+  const y = so.byte(ram[RollingSpriteIndex]);
   ram[Sprites + 1 + y] = a;
   ram[Sprites + 3 + y] = ram[0x00];
   return Anim_EndWriteSprite(ram[0x01], y);
@@ -163,16 +177,21 @@ export function CheckBossSoundEffectUW() {
   // CheckBossSoundEffectUW (Z_05)
   GetRoomFlags();
   let y = peek(LevelInfo_BossRoomId);
-  let a = read((((ram[0x01] << 8) | ram[0x00]) + y) & 0xffff) & 0xc0;
-  if (a !== 0xc0) {
+  const ptr = (ram[0x01] << 8) | ram[0x00];
+  $pxa('Z_05:4127', ptr, y);
+  let a = read((ptr + y) & 0xffff) & 0xc0;
+  if (!$br('Z_05:4130', a === 0xc0)) {
     y = ram[RoomId];
+    $pxa('Z_05:4132', LevelBlockAttrsE, y);
     a = peek(LevelBlockAttrsE + y) & 0x60;
     a = cpu.asl(a);
     a = cpu.rol(a);
     a = cpu.rol(a);
     a = cpu.rol(a);
-    a = table(bus.rom, 'BossSoundEffects').byte(a); // TAX / LDA BossSoundEffects, X
-    if (a !== 0) {
+    const bse = table(bus.rom, 'BossSoundEffects');
+    $pxa('Z_05:4139', bse.addr, a);
+    a = bse.byte(a); // TAX / LDA BossSoundEffects, X
+    if (!$br('Z_05:4140', a === 0)) {
       ram[SampleRequest] = a | 0x80; // repeat
       return;
     }

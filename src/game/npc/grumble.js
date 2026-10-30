@@ -17,6 +17,7 @@ import {
 import {
   Person_CheckCollisions, L_Person_FlagItemTakenAndAdvanceState, InitUnderworldPerson_DoNothing,
 } from './uwperson.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitGrumble_Full (Z_01): X = object slot. */
 export function InitGrumble_Full(x) {
@@ -25,7 +26,7 @@ export function InitGrumble_Full(x) {
   ram[PersonTextSelector] = 0x24;
   ram[PersonTextPtr] = table(bus.rom, 'TextboxLineAddrsLo').byte(2);
   // Already fed: get rid of him.
-  if (GetRoomFlagUWItemState() === 0) return PlayCharacterSfx();
+  if ($br('Z_01:1159', GetRoomFlagUWItemState() === 0)) return PlayCharacterSfx();
   ram[ObjState] = 0x00;
   ram[ObjType + 1] = 0x00;
 }
@@ -33,7 +34,7 @@ export function InitGrumble_Full(x) {
 /** UpdateGrumble_Full (Z_01): X = object slot. */
 export function UpdateGrumble_Full(x) {
   // UpdateGrumble_Full (Z_01): in state 3 translucent (drawn every other frame).
-  if (ram[ObjState + 1] !== 0x03 || (ram[FrameCounter] & 0x01) === 0) {
+  if ($br('Z_01:1486', ram[ObjState + 1] !== 0x03) || !$br('Z_01:1492', (ram[FrameCounter] & 0x01) !== 0)) {
     // @DrawAndCheckCollisions
     Person_CheckCollisions(x);
     const a = Anim_FetchObjPosForSpriteDescriptor(x);
@@ -47,7 +48,8 @@ export function UpdateGrumble_Full(x) {
 /** UpdateGrumble1 (Z_01): state 1. Wait for the food in slot $0F. */
 export function UpdateGrumble1() {
   // UpdateGrumble1 (Z_01)
-  if (!(ram[ObjState + 0x0f] & 0x80)) return InitUnderworldPerson_DoNothing();
+  $pxa('Z_01:1511', ObjState, 0x0f);
+  if ($br('Z_01:1513', !(ram[ObjState + 0x0f] & 0x80))) return InitUnderworldPerson_DoNothing();
   ram[ObjState] = 0x40; // halt Link
   ram[Tune1Request] = 0x04; // "secret found"
   return L_Person_FlagItemTakenAndAdvanceState();
@@ -58,7 +60,7 @@ export function UpdateGrumble3() {
   // UpdateGrumble3 (Z_01)
   Link_EndMoveAndAnimate_Bank1();
   const a = ram[ObjTimer + 1];
-  if (a !== 0) return InitUnderworldPerson_DoNothing();
+  if ($br('Z_01:1540', a !== 0)) return InitUnderworldPerson_DoNothing();
   ram[ObjState + 0x0f] = a;
   ram[InvFood] = a;
   ram[ObjState] = a;

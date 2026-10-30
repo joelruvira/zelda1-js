@@ -9,12 +9,13 @@ import {
 } from '../../core/vars.js';
 import { UpdateModeEandF_Idle, ModeE_ResetVariables } from './modeE-register.js';
 import { FetchFileAAddressSet, FormatFileA, FetchProfileNameAddress } from '../save/files.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** UpdateModeFElimination (Z_02): Start deletes the chosen slot, or over "End" goes to mode $E. */
 export function UpdateModeFElimination() {
   // UpdateModeFElimination (Z_02)
-  if (ram[ButtonsPressed] !== 0x10) return UpdateModeEandF_Idle();
-  if (ram[CurSaveSlot] !== 0x03) return DeleteSlot();
+  if (!$br('Z_02:1750', ram[ButtonsPressed] === 0x10)) return UpdateModeEandF_Idle();
+  if ($br('Z_02:1756', ram[CurSaveSlot] !== 0x03)) return DeleteSlot();
   // "End" was chosen: go to mode $E (register).
   ram[GameMode] = 0x0e;
   ram[IsUpdatingMode] = 0x00;
@@ -26,12 +27,19 @@ export function UpdateModeFElimination() {
 export function DeleteSlot() {
   // DeleteSlot (Z_02)
   ram[SampleRequest] = 0x08; // "hurt" sound effect
-  let x = table(bus.rom, 'SlotToBlankNameTransferBufEndOffset').byte(ram[CurSaveSlot]);
+  const ends = table(bus.rom, 'SlotToBlankNameTransferBufEndOffset');
+  $pxa('Z_02:1774', ends.addr, ram[CurSaveSlot]);
+  let x = ends.byte(ram[CurSaveSlot]);
   const buf = table(bus.rom, 'DeletedSlotBlankNameTransferBuf');
-  for (let y = 0x04; y >= 0; y--, x--) ram[DynTileBuf + y] = buf.byte(x);
+  for (let y = 0x04; ;) {
+    $pxa('Z_02:1781', buf.addr, x);
+    ram[DynTileBuf + y] = buf.byte(x);
+    x = (x - 1) & 0xff; y--;
+    if (!$br('Z_02:1785', y >= 0)) break;
+  }
   FetchFileAAddressSet();
   FormatFileA();
   FetchProfileNameAddress();
-  for (let y = 0x07; y >= 0; y--) poke(word(0x0c) + y, 0x24); // clear the name in save slot info
+  for (let y = 0x07; ;) { poke(word(0x0c) + y, 0x24); y--; if (!$br('Z_02:1795', y >= 0)) break; } // clear the name in save slot info
   return 0x24;
 }

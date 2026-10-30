@@ -5,6 +5,7 @@ import { ram, peek, poke } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { switchBank, tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   GameSubmode, CurLevel, CaveSourceRoomId, LevelInfo_StartRoomId, RoomId, CurSaveSlot,
   LevelInfo_PalettesTransferBuf, TileBufSelector, LevelInfo_LevelNumber, ObjX, ObjDir, ObjY,
@@ -45,13 +46,13 @@ export function InitMode3_Sub0() {
 export function InitMode3_Sub1() {
   // InitMode3_Sub1 (Z_07)
   let a;
-  if (ram[CurLevel] === 0 && ram[CaveSourceRoomId] !== 0xff) {
+  if (!$br('Z_07:1444', ram[CurLevel] !== 0) && $br('Z_07:1447', ram[CaveSourceRoomId] !== 0xff)) {
     a = ram[CaveSourceRoomId]; // @SetRoomId: start where the cave was entered
   } else {
     a = peek(LevelInfo_StartRoomId); // @UseStartRoomId
   }
   ram[RoomId] = a;
-  if (a === ram[CaveSourceRoomId]) ram[CaveSourceRoomId] = 0xff; // keep it invalid by default
+  if (!$br('Z_07:1455', a !== ram[CaveSourceRoomId])) ram[CaveSourceRoomId] = 0xff; // keep it invalid by default
   return PatchAndCueLevelPalettesTransferAndAdvanceSubmode();
 }
 
@@ -59,8 +60,10 @@ export function InitMode3_Sub1() {
 export function PatchAndCueLevelPalettesTransferAndAdvanceSubmode() {
   // PatchAndCueLevelPalettesTransferAndAdvanceSubmode (Z_07)
   const x = ram[CurSaveSlot];
+  $pxa('Z_07:1461', table(bus.rom, 'SaveSlotToPaletteRowOffset').addr, x);
   const y = table(bus.rom, 'SaveSlotToPaletteRowOffset').byte(x);
   // MenuPalettesTransferBuf is BANK_06_DATA, read in WRAM like the original.
+  $pxa('Z_07:1466', label('MenuPalettesTransferBuf').addr + 20, y);
   const a = peek(label('MenuPalettesTransferBuf').addr + 20 + y);
   poke(LevelInfo_PalettesTransferBuf + 20, a);
   ram[TileBufSelector] = 0x18; // cue transfer of level palettes
@@ -70,6 +73,7 @@ export function PatchAndCueLevelPalettesTransferAndAdvanceSubmode() {
 export function InitMode3_Sub2() {
   // InitMode3_Sub2 (Z_05)
   FillPlayAreaAttrs(ram[RoomId]);
+  $br('Z_05:6369', true);
   return SelectTransferBuf(0x18); // BNE always taken
 }
 
@@ -80,6 +84,7 @@ export function InitMode3_Sub3_TransferTopHalfAttrs() {
 
 export function InitMode3_Sub4_TransferBottomHalfAttrs() {
   // InitMode3_Sub4_TransferBottomHalfAttrs (Z_05): BNE always taken back to the JMP above
+  $br('Z_05:6380', true);
   return CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT0(0xe8, 0x2f);
 }
 
@@ -100,17 +105,19 @@ function L1701A_Exit() {
 
 export function InitMode3_Sub6() {
   // InitMode3_Sub6 (Z_05)
-  if (ram[CurLevel] !== 0) {
-    if (HasMap() === 0) return L1701A_Exit(); // no map: next submode
+  if (!$br('Z_05:6394', ram[CurLevel] === 0)) {
+    if ($br('Z_05:6396', HasMap() === 0)) return L1701A_Exit(); // no map: next submode
   }
+  $br('Z_05:6399', true);
   return SelectTransferBuf(0x44); // map in the status bar
 }
 
 export function InitMode3_Sub7() {
   // InitMode3_Sub7 (Z_05)
   const a = peek(LevelInfo_LevelNumber);
-  if (a === 0) return L1701A_Exit(); // OW
+  if ($br('Z_05:6403', a === 0)) return L1701A_Exit(); // OW
   poke(label('LevelNumberTransferBuf').addr + 9, a); // patch "LEVEL-X"
+  $br('Z_05:6406', true);
   return SelectTransferBuf(0x0c);
 }
 
@@ -132,9 +139,9 @@ export function InitMode3_Sub8() {
 export function UpdateMode3Unfurl() {
   // UpdateMode3Unfurl (Z_07)
   UpdateWorldCurtainEffect();
-  if (ram[ObjX + 12] !== 0) return; // L1EBF8_Exit: left column hasn't reached the left edge
+  if ($br('Z_07:1737', ram[ObjX + 12] !== 0)) return; // L1EBF8_Exit: left column hasn't reached the left edge
   SetMMC1Control(0x0f); // horizontal mirroring
-  if (ram[UndergroundExitType] !== 0) return GoToNextModeResetGridOffset();
+  if (!$br('Z_07:1741', ram[UndergroundExitType] === 0)) return GoToNextModeResetGridOffset();
   return GoToNextModePlayLevelSong();
 }
 
@@ -150,7 +157,7 @@ export function UpdateWorldCurtainEffect_Bank2() {
  */
 export function UpdateWorldCurtainEffect() {
   // UpdateWorldCurtainEffect (Z_01)
-  if (ram[ObjTimer] !== 0) return; // delay until ObjTimer[0] expires
+  if ($br('Z_01:4210', ram[ObjTimer] !== 0)) return; // delay until ObjTimer[0] expires
   ram[0x0a] = 0x01;
   do {
     // @LoopColumn
@@ -160,7 +167,7 @@ export function UpdateWorldCurtainEffect() {
     SetMMC1Control_Local5(0x0e); // vertical mirroring
     CopyColumnToTileBuf();
     ram[0x0a]--;
-  } while (!(ram[0x0a] & 0x80));
+  } while ($br('Z_01:4224', !(ram[0x0a] & 0x80)));
   ram[CurColumn] = 0xff;
   ram[ObjTimer] = 0x05;
   ram[ObjX + 12]--;

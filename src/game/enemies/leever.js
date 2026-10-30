@@ -2,6 +2,7 @@
 // the zora (states 0-5: hidden, mound, surfacing, out, sinking, mound). X = object slot in every routine.
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import {
@@ -44,21 +45,25 @@ export function UpdateBlueLeever(x) {
  */
 export function UpdateBurrower(x) {
   // UpdateBurrower (Z_04)
-  if (ram[ObjTimer + x] === 0) {
-    if (ram[ObjType + x] === 0x11 && ram[ObjState + x] === 0x01) {
+  if (!$br('Z_04:2609', ram[ObjTimer + x] !== 0)) {
+    $pxa('Z_04:2612', ObjType, x);
+    if (!$br('Z_04:2614', ram[ObjType + x] !== 0x11) && !$br('Z_04:2617', ram[ObjState + x] !== 0x01)) {
       let y = 0x03;
-      if (ram[ObjY + x] < ram[ObjY]) y--;
+      if (!$br('Z_04:2628', ram[ObjY + x] >= ram[ObjY])) y--;
       ram[ObjDir + x] = y;
     }
     // @CycleState
     let a = (ram[ObjState + x] + 1) & 0xff;
-    if (a >= 0x06) a = 0x00;
+    if (!$br('Z_04:2639', a < 0x06)) a = 0x00;
     ram[ObjState + x] = a;
+    $pxa('Z_04:2646', tbl('BlueLeeverStateQSpeeds').addr, a);
     ram[ObjQSpeedFrac + x] = tbl('BlueLeeverStateQSpeeds').byte(a);
+    $pxa('Z_04:2648', tbl('BlueLeeverStateTimes').addr, a);
     ram[ObjTimer + x] = tbl('BlueLeeverStateTimes').byte(a);
   }
   // @Animate
   const y = ram[ObjState + x];
+  $pxa('Z_04:2655', tbl('BlueLeeverStateAnimTimes').addr, y);
   return Burrower_AnimateDrawAndCheckCollisions(tbl('BlueLeeverStateAnimTimes').byte(y), x); // falls through
 }
 
@@ -70,32 +75,37 @@ export function Burrower_AnimateDrawAndCheckCollisions(a, x) {
   // Burrower_AnimateDrawAndCheckCollisions (Z_04)
   Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(a, x);
   a = ram[ObjState + x];
-  if (a === 0) return; // @Exit
+  if ($br('Z_04:2669', a === 0)) return; // @Exit
   let draw = false;
-  if (ram[ObjType + x] === 0x11) {
+  $pxa('Z_04:2673', ObjType, x);
+  if (!$br('Z_04:2675', ram[ObjType + x] !== 0x11)) {
     const y = ram[ObjState + x];
-    if (y >= 0x02 && y < 0x05) {
+    if (!$br('Z_04:2678', y < 0x02) && !$br('Z_04:2680', y >= 0x05)) {
       a = ram[ObjDir + x];
-      if (a !== 0) draw = true; // BNE @Draw
+      if ($br('Z_04:2682', a !== 0)) draw = true; // BNE @Draw
     }
   }
   if (!draw) {
     // @CalcFrameImage: ((A - 1) * 2) + movement frame
+    $pxa('Z_04:2697', ObjAnimFrame, x);
     a = ((((a - 1) & 0xff) << 1) + ram[ObjAnimFrame + x]) & 0xff;
   }
   // @Draw
   DrawObjectMirrored(a, x);
   let check = false;
-  if (ram[ObjType + x] === 0x11) {
+  $pxa('Z_04:2705', ObjType, x);
+  if (!$br('Z_04:2707', ram[ObjType + x] !== 0x11)) {
     const s = ram[ObjState + x];
-    if (s === 0x02 || s === 0x04) check = true;
+    if ($br('Z_04:2710', s === 0x02) || $br('Z_04:2712', s === 0x04)) check = true;
   }
   // @NoState3Collisions
-  if (!check && ram[ObjState + x] !== 0x03) return;
+  if (!check && $br('Z_04:2717', ram[ObjState + x] !== 0x03)) return;
   // @CheckCollisions
   CheckMonsterCollisions(x);
-  if (ram[ObjMetastate + x] === 0) return;
-  if (ram[ObjType + x] !== 0x10) return;
+  $pxa('Z_04:2723', ObjMetastate, x);
+  if ($br('Z_04:2724', ram[ObjMetastate + x] === 0)) return;
+  $pxa('Z_04:2727', ObjType, x);
+  if ($br('Z_04:2729', ram[ObjType + x] !== 0x10)) return;
   ram[ActiveRedLeeverCount]--;
 }
 
@@ -106,39 +116,39 @@ export function Burrower_AnimateDrawAndCheckCollisions(a, x) {
  */
 export function UpdateRedLeever(x) {
   // UpdateRedLeever (Z_04)
-  if (ram[ObjState + x] === 0) {
+  if ($br('Z_04:2746', ram[ObjState + x] === 0)) {
     // State 0: decide whether to burst out of the ground.
-    if (ram[RedLeeverLongTimer] !== 0) return; // @Exit
-    if (ram[ActiveRedLeeverCount] >= 0x02) return;
+    if ($br('Z_04:2754', ram[RedLeeverLongTimer] !== 0)) return; // @Exit
+    if ($br('Z_04:2759', ram[ActiveRedLeeverCount] >= 0x02)) return;
     ram[ObjDir + x] = ram[ObjDir];
-    if (ram[Random + 1 + x] >= 0xc0) ReverseObjDir(x);
+    if (!$br('Z_04:2768', ram[Random + 1 + x] < 0xc0)) ReverseObjDir(x);
     let a;
-    if (ram[ObjDir + x] & 0x0c) {
+    if (!$br('Z_04:2774', (ram[ObjDir + x] & 0x0c) === 0)) {
       ram[ObjX + x] = ram[ObjX];
-      ram[0x00] = (ram[ObjDir + x] & 0x08) ? 0xd8 : 0x28;
+      ram[0x00] = !$br('Z_04:2785', (ram[ObjDir + x] & 0x08) === 0) ? 0xd8 : 0x28;
       a = (((ram[ObjY] + ram[0x00]) & 0xf0) | 0x0d) & 0xff;
       ram[ObjY + x] = a;
-      if (a < 0x5d) return; // @Exit
+      if (!$br('Z_04:2806', a >= 0x5d)) return; // @Exit
     } else {
       // @PlaceHorizontally
       a = ram[ObjY];
       ram[ObjY + x] = a;
-      if (a < 0x5d) return;
-      ram[0x00] = (ram[ObjDir + x] & 0x02) ? 0xd8 : 0x28;
+      if ($br('Z_04:2819', a < 0x5d)) return;
+      ram[0x00] = !$br('Z_04:2826', (ram[ObjDir + x] & 0x02) === 0) ? 0xd8 : 0x28;
       ram[0x01] = ram[ObjX];
       a = (ram[ObjX] + ram[0x00]) & 0xf8;
       ram[ObjX + x] = a;
       ram[0x02] = a;
-      if (a >= ram[0x01]) {
+      if (!$br('Z_04:2848', a < ram[0x01])) {
         const pushed = a; // PHA
         ram[0x02] = ram[0x01];
         ram[0x01] = pushed; // PLA
       }
       // @Subtract: a wrapped X is too far.
-      if (((ram[0x01] - ram[0x02]) & 0xff) >= 0x30) return;
+      if ($br('Z_04:2865', ((ram[0x01] - ram[0x02]) & 0xff) >= 0x30)) return;
     }
     // @CheckSafeToSpawn
-    if (GetCollidableTileStill(x) >= ram[ObjectFirstUnwalkableTile]) return;
+    if ($br('Z_04:2871', GetCollidableTileStill(x) >= ram[ObjectFirstUnwalkableTile])) return;
     ram[ActiveRedLeeverCount]++;
     ram[ObjAnimCounter + x] = 0x01;
     ram[RedLeeverLongTimer] = 0x02;
@@ -146,25 +156,26 @@ export function UpdateRedLeever(x) {
     ReverseObjDir(x);
   }
   // @CheckOtherStates
-  if (ram[ObjState + x] === 0x03) {
-    if (ram[ObjShoveDir + x] !== 0) {
+  if (!$br('Z_04:2891', ram[ObjState + x] !== 0x03)) {
+    if (!$br('Z_04:2897', ram[ObjShoveDir + x] === 0)) {
       Obj_Shove(x);
       return RedLeever_AnimateAndCheckCollisions(x);
     }
     // @CheckStunned
-    if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return RedLeever_AnimateAndCheckCollisions(x);
+    if ($br('Z_04:2906', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return RedLeever_AnimateAndCheckCollisions(x);
     ram[0x0f] = ram[ObjDir + x];
-    if (GetCollidingTileMoving(x) >= ram[ObjectFirstUnwalkableTile]) {
+    if ($br('Z_04:2915', GetCollidingTileMoving(x) >= ram[ObjectFirstUnwalkableTile])) {
       return RedLeever_CycleStateDrawAndCheckCollisions(x);
     }
-    if (BoundByRoom(x) === 0) return RedLeever_CycleStateDrawAndCheckCollisions(x);
+    if ($br('Z_04:2917', BoundByRoom(x) === 0)) return RedLeever_CycleStateDrawAndCheckCollisions(x);
     MoveObject(x);
+    $pxa('Z_04:2923', ObjGridOffset, x);
     const g = ram[ObjGridOffset + x] & 0x0f;
-    if (g === 0) ram[ObjGridOffset + x] = g;
+    if (!$br('Z_04:2925', g !== 0)) ram[ObjGridOffset + x] = g;
     ram[ObjTimer + x] = 0xff;
   }
   // @AnimateIfTime
-  if (ram[ObjTimer + x] !== 0) return RedLeever_AnimateAndCheckCollisions(x);
+  if ($br('Z_04:2936', ram[ObjTimer + x] !== 0)) return RedLeever_AnimateAndCheckCollisions(x);
   return RedLeever_CycleStateDrawAndCheckCollisions(x); // falls through
 }
 
@@ -175,12 +186,14 @@ export function UpdateRedLeever(x) {
 export function RedLeever_CycleStateDrawAndCheckCollisions(x) {
   // RedLeever_CycleStateDrawAndCheckCollisions (Z_04)
   let a = (ram[ObjState + x] + 1) & 0xff;
-  if (a >= 0x06) {
+  if (!$br('Z_04:2947', a < 0x06)) {
     ram[ActiveRedLeeverCount]--;
     a = 0x00;
   }
   ram[ObjState + x] = a;
+  $pxa('Z_04:2956', tbl('RedLeeverStateQSpeeds').addr, a);
   ram[ObjQSpeedFrac + x] = tbl('RedLeeverStateQSpeeds').byte(a);
+  $pxa('Z_04:2958', tbl('RedLeeverStateTimes').addr, a);
   ram[ObjTimer + x] = tbl('RedLeeverStateTimes').byte(a);
   return RedLeever_AnimateAndCheckCollisions(x); // falls through
 }
@@ -189,5 +202,6 @@ export function RedLeever_CycleStateDrawAndCheckCollisions(x) {
 export function RedLeever_AnimateAndCheckCollisions(x) {
   // RedLeever_AnimateAndCheckCollisions (Z_04)
   const y = ram[ObjState + x];
+  $pxa('Z_04:2963', tbl('RedLeeverStateAnimTimes').addr, y);
   return Burrower_AnimateDrawAndCheckCollisions(tbl('RedLeeverStateAnimTimes').byte(y), x); // JMP
 }

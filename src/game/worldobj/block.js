@@ -16,6 +16,7 @@ import { MoveObject } from '../movement/walker.js';
 import { ChangeTileObjTiles } from '../world/tilemap.js';
 import { GetUniqueRoomId } from '../world/roomflags.js';
 import { Anim_FetchObjPosForSpriteDescriptor, DrawObjectNotMirrored } from '../draw/anim.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** UpdateBlock (Z_04). X = block slot: dispatches on ObjState & 3. */
 export function UpdateBlock(x) {
@@ -30,28 +31,30 @@ export function UpdateBlock(x) {
 /** UpdateBlock0Idle (Z_04). X = block slot: waits until Link pushes the block $10 frames. */
 export function UpdateBlock0Idle(x) {
   // UpdateBlock0Idle (Z_04)
-  if (ram[RoomAllDead] === 0) return ResetPushTimer(x);
+  if ($br('Z_04:642', ram[RoomAllDead] === 0)) return ResetPushTimer(x);
   let y;
   let a;
-  if (ram[ObjX] === ram[ObjX + x]) {
+  if (!$br('Z_04:649', ram[ObjX] !== ram[ObjX + x])) {
     y = 0x00;
     a = (ram[ObjY] + 0x03 - ram[ObjY + x]) & 0xff;
   } else {
     // @CheckAlignedY
-    if (((ram[ObjY] + 0x03) & 0xff) !== ram[ObjY + x]) return ResetPushTimer(x);
+    if ($br('Z_04:665', ((ram[ObjY] + 0x03) & 0xff) !== ram[ObjY + x])) return ResetPushTimer(x);
     y = 0x02;
     a = (ram[ObjX] - ram[ObjX + x]) & 0xff;
   }
   // @TestDifference
-  if (a & 0x80) {
+  if (!$br('Z_04:681', !(a & 0x80))) {
     y++;
     a = Negate(a);
   }
-  if (a >= 0x11) return ResetPushTimer(x);
+  if ($br('Z_04:687', a >= 0x11)) return ResetPushTimer(x);
   a = ram[ObjInputDir];
-  if (a !== table(bus.rom, 'BlockPushDirections').byte(y)) return ResetPushTimer(x);
+  $pxa('Z_04:694', label('BlockPushDirections').addr, y);
+  if ($br('Z_04:695', a !== table(bus.rom, 'BlockPushDirections').byte(y))) return ResetPushTimer(x);
   ram[ObjPushTimer + x]++;
-  if (ram[ObjPushTimer + x] < 0x10) return; // L10262_Exit
+  $pxa('Z_04:703', ObjPushTimer, x);
+  if ($br('Z_04:705', ram[ObjPushTimer + x] < 0x10)) return; // L10262_Exit
   ram[ObjDir + x] = a;
   ram[ObjState + x]++;
   ram[ReturnToBank4]++;
@@ -78,8 +81,9 @@ export function UpdateBlock1Moving(x) {
   ram[0x0f] = ram[ObjDir + x];
   MoveObject(x);
   DrawBlock(x);
+  $pxa('Z_04:738', ObjGridOffset, x);
   const a = ram[ObjGridOffset + x];
-  if (a !== 0x10 && a !== 0xf0) return UpdateBlock2Done(x);
+  if (!$br('Z_04:740', a === 0x10) && $br('Z_04:742', a !== 0xf0)) return UpdateBlock2Done(x);
   ram[Tune1Request] = 0x04; // "secret revealed" tune
   ram[ReturnToBank4]++;
   ChangeTileObjTiles(0xb0, x); // block tile
@@ -98,7 +102,7 @@ export function FindAndCreatePushBlockObject() {
   // FindAndCreatePushBlockObject (Z_05)
   ram[ObjState + 11] = 0x00;
   ram[ObjDir + 11] = 0x00;
-  if (GetUniqueRoomId() === 0x21) {
+  if (!$br('Z_05:5484', GetUniqueRoomId() !== 0x21)) {
     // Unverified code 167FE
     ram[ObjX + 11] = 0x40;
     ram[ObjY + 11] = 0x80; // ASL
@@ -109,10 +113,12 @@ export function FindAndCreatePushBlockObject() {
     // @LoopColumn: look for a block tile in row $A from column 4.
     for (;;) {
       ram[0x00] = cols.byte(x);
+      $pxa('Z_05:5500', cols.addr + 1, x);
       ram[0x01] = cols.byte(x + 1);
-      if (read((word(0x00) + y) & 0xffff) === 0xb0) break; // @Found
+      $pxa('Z_05:5502', ram[0x00], y);
+      if ($br('Z_05:5504', read((word(0x00) + y) & 0xffff) === 0xb0)) break; // @Found
       x = (x + 4) & 0xff;
-      if (x === 0x34) break;
+      if (!$br('Z_05:5510', x !== 0x34)) break;
     }
     // @Found
     ram[ObjX + 11] = (x << 2) & 0xff;

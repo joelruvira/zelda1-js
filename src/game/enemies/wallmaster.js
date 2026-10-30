@@ -3,6 +3,7 @@
 // entrance (mode 3). X = object slot in every routine.
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import {
@@ -24,7 +25,12 @@ import { Link_EndMoveAndAnimate_Bank4 } from '../link/anim.js';
 
 const tbl = (name) => table(bus.rom, name);
 // LDA WallmasterDirsAndAttrsLeft, Y: the four 16-byte blocks (left, right, top, bottom) are contiguous.
-const dirsAndAttrs = (y) => tbl('WallmasterDirsAndAttrsLeft').byte(y);
+// ref = asm line of the indexed read (page-cross hint).
+const dirsAndAttrs = (y, ref) => {
+  const t = tbl('WallmasterDirsAndAttrsLeft');
+  $pxa(ref, t.addr, y);
+  return t.byte(y);
+};
 
 /**
  * UpdateWallmaster (Z_04). X = wallmaster. State 0 waits inside the wall (all wallmasters share
@@ -33,41 +39,44 @@ const dirsAndAttrs = (y) => tbl('WallmasterDirsAndAttrsLeft').byte(y);
  */
 export function UpdateWallmaster(x) {
   // UpdateWallmaster (Z_04)
-  if (ram[ObjState + x] !== 0) return L_Wallmaster_State1(x);
-  if (ram[ObjTimer + 1] !== 0) return; // @Exit
-  if (ram[ObjState] === 0x40) return; // Link halted
+  if (!$br('Z_04:4130', ram[ObjState + x] === 0)) return L_Wallmaster_State1(x);
+  if ($br('Z_04:4140', ram[ObjTimer + 1] !== 0)) return; // @Exit
+  if (!$br('Z_04:4145', ram[ObjState] !== 0x40)) return; // Link halted
   // @State0
   let a = ram[ObjX];
-  if (a < 0x29 || a >= 0xc8) {
+  if ($br('Z_04:4158', a < 0x29) || !$br('Z_04:4160', a < 0xc8)) {
     a = ram[ObjY];
-    if (a < 0x6d) return;
-    if (a >= 0xb5) return;
+    if ($br('Z_04:4164', a < 0x6d)) return;
+    if ($br('Z_04:4166', a >= 0xb5)) return;
   }
   // @CheckLeftAndRight
   a = ram[ObjX];
   let y;
-  if (a === 0x20 || a === 0xd0) {
+  if ($br('Z_04:4174', a === 0x20) || !$br('Z_04:4176', a !== 0xd0)) {
     ram[0x00] = ram[ObjY];
     ram[0x01] = ram[ObjX];
     ram[0x02] = 0x08;
     y = Wallmaster_CalcStartPosition(0x00, x, 0x20);
     ram[ObjY + x] = ram[0x04];
+    $pxa('Z_04:4197', tbl('WallmasterInitialXs').addr, y);
     a = tbl('WallmasterInitialXs').byte(y);
   } else {
     // @CheckTopAndBottom
     a = ram[ObjY];
-    if (a !== 0x5d && a !== 0xbd) return;
+    if (!$br('Z_04:4206', a === 0x5d) && $br('Z_04:4208', a !== 0xbd)) return;
     ram[0x00] = ram[ObjX];
     ram[0x01] = ram[ObjY];
     ram[0x02] = 0x02;
     y = Wallmaster_CalcStartPosition(0x20, x, 0x5d);
+    $pxa('Z_04:4225', tbl('WallmasterInitialYs').addr, y);
     ram[ObjY + x] = tbl('WallmasterInitialYs').byte(y);
     a = ram[0x04];
   }
   // @SetUpToEmerge
   ram[ObjX + x] = a;
+  $pxa('Z_04:4235', Wallmaster_ObjStep, x);
   y = ram[Wallmaster_ObjStep + x];
-  ram[ObjDir + x] = dirsAndAttrs(y) & 0x0f;
+  ram[ObjDir + x] = dirsAndAttrs(y, 'Z_04:4236') & 0x0f;
   ram[ObjTimer + 1] = 0x60;
   ram[ObjQSpeedFrac + x] = 0x18;
   ram[ObjAnimCounter + x] = 0x08;
@@ -84,23 +93,27 @@ export function UpdateWallmaster(x) {
  */
 export function L_Wallmaster_State1(x) {
   // L_Wallmaster_State1 (Z_04)
-  if (ram[ObjShoveDir + x] !== 0) {
+  if (!$br('Z_04:4262', ram[ObjShoveDir + x] === 0)) {
     Obj_Shove(x);
     return drawAndCheckCollisions(x);
   }
   // @CheckStunned
-  if ((ram[InvClock] | ram[ObjStunTimer + x]) !== 0) return drawAndCheckCollisions(x);
+  if ($br('Z_04:4273', (ram[InvClock] | ram[ObjStunTimer + x]) !== 0)) return drawAndCheckCollisions(x);
   ram[0x0f] = ram[ObjDir + x];
   MoveObject(x);
+  $pxa('Z_04:4280', ObjGridOffset, x);
   const g = ram[ObjGridOffset + x];
-  if (g !== 0x10 && g !== 0xf0) return drawAndCheckCollisions(x);
+  if (!$br('Z_04:4282', g === 0x10) && $br('Z_04:4284', g !== 0xf0)) return drawAndCheckCollisions(x);
   ram[ObjGridOffset + x] = 0x00;
   ram[Wallmaster_ObjStep + x]++;
-  ram[ObjDir + x] = dirsAndAttrs(ram[Wallmaster_ObjStep + x]) & 0x0f;
+  $pxa('Z_04:4294', Wallmaster_ObjStep, x);
+  ram[ObjDir + x] = dirsAndAttrs(ram[Wallmaster_ObjStep + x], 'Z_04:4295') & 0x0f;
   ram[Wallmaster_ObjTilesCrossed + x]++;
-  if (ram[Wallmaster_ObjTilesCrossed + x] < 0x07) return drawAndCheckCollisions(x);
+  $pxa('Z_04:4304', Wallmaster_ObjTilesCrossed, x);
+  if ($br('Z_04:4306', ram[Wallmaster_ObjTilesCrossed + x] < 0x07)) return drawAndCheckCollisions(x);
+  $pxa('Z_04:4311', ObjCaptureTimer, x);
   let a = ram[ObjCaptureTimer + x];
-  if (a !== 0) {
+  if (!$br('Z_04:4312', a === 0)) {
     HideSpritesOverLink();
     ram[GameMode] = 0x03;
     a = 0x00;
@@ -114,18 +127,23 @@ export function L_Wallmaster_State1(x) {
 
 /** L_Wallmaster_State1@Wallmaster_DrawAndCheckCollisions. */
 function drawAndCheckCollisions(x) {
-  if (ram[ObjCaptureTimer + x] !== 0) return drawWithCapturedLink(x);
+  $pxa('Z_04:4332', ObjCaptureTimer, x);
+  if ($br('Z_04:4333', ram[ObjCaptureTimer + x] !== 0)) return drawWithCapturedLink(x);
   CheckMonsterCollisions(x);
-  if (ram[ObjCaptureTimer + x] !== 0) {
+  $pxa('Z_04:4338', ObjCaptureTimer, x);
+  if (!$br('Z_04:4339', ram[ObjCaptureTimer + x] === 0)) {
     ram[ObjState] = 0x40;
     ram[ObjShoveDir] = 0x00;
   }
   const saved = ram[RollingSpriteIndex]; // PHA
   Wallmaster_PrepareToDraw(x);
+  $pxa('Z_04:4350', ObjAnimFrame, x);
   DrawObjectNotMirrored(ram[ObjAnimFrame + x], x);
   const y = saved; // PLA / TAY
   const offsets = tbl('SpriteOffsets');
+  $pxa('Z_04:4357', offsets.addr, y);
   ram[0x00] = offsets.byte(y);
+  $pxa('Z_04:4359', offsets.addr + 1, y);
   return patchSprites(offsets.byte(y + 1));
 }
 
@@ -134,10 +152,12 @@ function patchSprites(a) {
   ram[0x01] = a;
   Wallmaster_PutSpritesBehindBgIfNeeded();
   const x = ram[CurObjIndex];
-  if (ram[ObjAnimFrame + x] === 0) return; // @Exit
+  $pxa('Z_04:4368', ObjAnimFrame, x);
+  if ($br('Z_04:4369', ram[ObjAnimFrame + x] === 0)) return; // @Exit
   // Frame 1 (closed hand): the left half uses Keese tiles $9C/$9D; patch it to $AC.
   let y = ram[0x00];
-  if (ram[Sprites + 1 + y] !== 0x9c) y = ram[0x01];
+  $pxa('Z_04:4379', Sprites + 1, y);
+  if (!$br('Z_04:4381', ram[Sprites + 1 + y] === 0x9c)) y = ram[0x01];
   ram[Sprites + 1 + y] = 0xac;
 }
 
@@ -163,10 +183,11 @@ function drawWithCapturedLink(x) {
 export function Wallmaster_PrepareToDraw(x) {
   // Wallmaster_PrepareToDraw (Z_04)
   Anim_AdvanceAnimCounterAndSetObjPosForSpriteDescriptor(0x08, x);
+  $pxa('Z_04:4422', Wallmaster_ObjStep, x);
   const y = ram[Wallmaster_ObjStep + x];
-  let a = (dirsAndAttrs(y) & 0xf0) | 0x01;
+  let a = (dirsAndAttrs(y, 'Z_04:4423') & 0xf0) | 0x01;
   a = Anim_SetSpriteDescriptorAttributes(a);
-  if ((a & 0x40) === 0) return;
+  if ($br('Z_04:4431', (a & 0x40) === 0)) return;
   Anim_SetSpriteDescriptorAttributes(ram[0x04] & 0x8f);
   ram[0x0f]++;
 }
@@ -182,14 +203,16 @@ export function Wallmaster_CalcStartPosition(a, x, y) {
   ram[Wallmaster_ObjStep + x] = a;
   ram[0x03] = y;
   a = 0x24;
-  if (ram[ObjInputDir] !== 0) a = 0x32;
-  if (ram[ObjDir] === ram[0x02]) {
+  if (!$br('Z_04:4460', ram[ObjInputDir] === 0)) a = 0x32;
+  if (!$br('Z_04:4469', ram[ObjDir] !== ram[0x02])) {
+    $pxa('Z_04:4471', Wallmaster_ObjStep, x);
     ram[Wallmaster_ObjStep + x] = ram[Wallmaster_ObjStep + x] + 0x08;
     a = ((a ^ 0xff) + 0x01) & 0xff;
   }
   ram[0x04] = a + ram[0x00];
   y = 0x00;
-  if (ram[0x01] !== ram[0x03]) {
+  if (!$br('Z_04:4498', ram[0x01] === ram[0x03])) {
+    $pxa('Z_04:4499', Wallmaster_ObjStep, x);
     ram[Wallmaster_ObjStep + x] = ram[Wallmaster_ObjStep + x] + 0x10;
     y++;
   }
@@ -212,11 +235,18 @@ export function Wallmaster_PutSpriteBehindBgIfNeeded(y) {
   // Wallmaster_PutSpriteBehindBgIfNeeded (Z_04)
   const ext = tbl('SpriteRelativeExtents');
   let x = 0x01;
-  do {
+  for (;;) {
     // @LoopExtent
+    $pxa('Z_04:4520', Sprites + 3, y);
+    $pxa('Z_04:4522', ext.addr, x);
     const a = (ram[Sprites + 3 + y] + ext.byte(x)) & 0xff;
-    if (a >= 0xe9 || a < 0x18) ram[Sprites + 2 + y] = ram[Sprites + 2 + y] | 0x20; // @AddPriorityBit
+    if ($br('Z_04:4524', a >= 0xe9) || !$br('Z_04:4526', a >= 0x18)) {
+      // @AddPriorityBit
+      $pxa('Z_04:4529', Sprites + 2, y);
+      ram[Sprites + 2 + y] = ram[Sprites + 2 + y] | 0x20;
+    }
     x = (x - 1) & 0xff;
-  } while (!(x & 0x80));
+    if (!$br('Z_04:4534', !(x & 0x80))) break;
+  }
   return x;
 }

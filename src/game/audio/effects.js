@@ -12,6 +12,7 @@ import {
   EffectRequest, Effect, EffectCounter, SeaSfxCounter, Tune0Request, Sample, Tune1,
   BackgroundSample, ApuStatus_4015, NoiseVolume_400C, NoisePeriod_400E, NoiseLength_400F,
 } from '../../core/vars.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 const rom = () => bus.rom;
 const STEP = 0x68; // $68: stairs step counter / sea volume (no name in the asm)
@@ -24,22 +25,22 @@ const STEP = 0x68; // $68: stairs step counter / sea volume (no name in the asm)
 export function DriveEffect(x) {
   // DriveEffect (Z_00)
   const y = ram[EffectRequest];
-  if (y & 0x80) return SilenceSample(x); // $80 silences samples and tune 1
+  if ($br('Z_00:308', (y & 0x80) !== 0)) return SilenceSample(x); // $80 silences samples and tune 1
   let a = ram[Effect];
   const lsrReq = () => { const c = ram[EffectRequest] & 1; ram[EffectRequest] >>= 1; return c; };
   const lsrA = () => { const c = a & 1; a >>= 1; return c; };
-  if (lsrReq()) return PlaySwordSfx(x, y);
-  if (lsrA()) return ContinueSwordSfx(x);
-  if (lsrReq()) return PlayArrowSfx(x, y);
-  if (lsrA()) return ContinueArrowSfx(x);
-  if (lsrReq()) return PlayFlameSfx(x, y);
-  if (lsrA()) return ContinueFlameSfx(x);
-  if (lsrReq()) return PlayStairsSfx(x, y);
-  if (lsrA()) return ContinueStairsSfx(x);
-  if (lsrReq()) return PlayBombSfx(x, y);
-  if (lsrA()) return ContinueBombSfx(x);
-  if (lsrA()) return ContinueSeaSfx(x);
-  if (lsrReq()) return PlaySeaSfx(x, y);
+  if ($br('Z_00:311', lsrReq() !== 0)) return PlaySwordSfx(x, y);
+  if ($br('Z_00:313', lsrA() !== 0)) return ContinueSwordSfx(x);
+  if ($br('Z_00:315', lsrReq() !== 0)) return PlayArrowSfx(x, y);
+  if ($br('Z_00:317', lsrA() !== 0)) return ContinueArrowSfx(x);
+  if ($br('Z_00:319', lsrReq() !== 0)) return PlayFlameSfx(x, y);
+  if ($br('Z_00:321', lsrA() !== 0)) return ContinueFlameSfx(x);
+  if ($br('Z_00:323', lsrReq() !== 0)) return PlayStairsSfx(x, y);
+  if ($br('Z_00:325', lsrA() !== 0)) return ContinueStairsSfx(x);
+  if ($br('Z_00:327', lsrReq() !== 0)) return PlayBombSfx(x, y);
+  if ($br('Z_00:329', lsrA() !== 0)) return ContinueBombSfx(x);
+  if ($br('Z_00:331', lsrA() !== 0)) return ContinueSeaSfx(x);
+  if ($br('Z_00:333', lsrReq() !== 0)) return PlaySeaSfx(x, y);
   return x;
 }
 
@@ -61,7 +62,7 @@ export function PlayArrowSfx(x, y) {
   ram[EffectCounter] = 0x05;
   // If "heart taken" is requested in tune channel 0, then cancel it.
   const a = ram[Tune0Request] & 0xef;
-  if (a === 0) ram[Tune0Request] = a;
+  if (!$br('Z_00:241', a !== 0)) ram[Tune0Request] = a;
   return ContinueArrowSfx(x);
 }
 
@@ -69,8 +70,9 @@ export function PlayArrowSfx(x, y) {
 export function ContinueArrowSfx(x) {
   // ContinueArrowSfx (Z_00)
   const y = ram[EffectCounter];
+  $pxa('Z_00:246', table(rom(), 'ArrowSfxNotes').addr - 1, y);
   const a = table(rom(), 'ArrowSfxNotes').byte(y - 1);
-  if (a !== 0) return PlaySfxNote(a);
+  if ($br('Z_00:247', a !== 0)) return PlaySfxNote(a);
   return PlayStairsSfx(x, y); // falls through
 }
 
@@ -86,14 +88,15 @@ export function PlayStairsSfx(x, y) {
 /** ContinueStairsSfx (Z_00, part of DriveEffect) */
 export function ContinueStairsSfx(x) {
   // ContinueStairsSfx (Z_00)
-  ram[STEP]--;
-  let y = ram[STEP];
-  if (y === 0) {
-    ram[STEP] = 0x0d;
+  let y;
+  for (;;) {
     ram[STEP]--;
     y = ram[STEP];
+    if (!$br('Z_00:260', y === 0)) break;
+    ram[STEP] = 0x0d;
   }
-  if (y >= 0x07) return SetSfxVolumeLength(0x10, x);
+  if (!$br('Z_00:262', y < 0x07)) { $br('Z_00:264', true); return SetSfxVolumeLength(0x10, x); }
+  $pxa('Z_00:266', table(rom(), 'StairsSfxNotes').addr - 1, y);
   return PlaySfxNote(table(rom(), 'StairsSfxNotes').byte(y - 1));
 }
 
@@ -122,7 +125,7 @@ export function SetSfxVolumeLength(a, x) {
  */
 export function SilenceSfxIfEnded(z, x) {
   // SilenceSfxIfEnded (Z_00)
-  if (z) {
+  if (!$br('Z_00:286', !z)) {
     write(NoiseVolume_400C, 0xf0);
     ram[Effect] = 0;
   }
@@ -141,8 +144,9 @@ export function PlaySwordSfx(x, y) {
 export function ContinueSwordSfx(x) {
   // ContinueSwordSfx (Z_00)
   const y = ram[EffectCounter];
+  $pxa('Z_00:301', table(rom(), 'SwordSfxNotes').addr - 1, y);
   const a = table(rom(), 'SwordSfxNotes').byte(y - 1);
-  if (a !== 0) return PlaySfxNote(a);
+  if ($br('Z_00:302', a !== 0)) return PlaySfxNote(a);
   return DriveEffect(x); // falls through
 }
 
@@ -158,8 +162,9 @@ export function PlayBombSfx(x, y) {
 export function ContinueBombSfx(x) {
   // DriveEffect@ContinueBombSfx (Z_00)
   const y = ram[EffectCounter];
+  $pxa('Z_00:343', table(rom(), 'BombSfxNotes').addr - 1, y);
   const a = table(rom(), 'BombSfxNotes').byte(y - 1);
-  if (a !== 0) return PlaySfxNote(a);
+  if ($br('Z_00:344', a !== 0)) return PlaySfxNote(a);
   return PlayFlameSfx(x, y); // falls through
 }
 
@@ -177,6 +182,7 @@ export function ContinueFlameSfx() {
   const y = ram[EffectCounter] >> 1;
   const x = 0x0e;
   write(NoisePeriod_400E, x);
+  $pxa('Z_00:357', table(rom(), 'FlameSfxNotes').addr - 1, y);
   return SetSfxVolumeLength(table(rom(), 'FlameSfxNotes').byte(y - 1), x);
 }
 
@@ -193,14 +199,16 @@ export function PlaySeaSfx(x, y) {
 export function ContinueSeaSfx() {
   // DriveEffect@ContinueSeaSfx (Z_00)
   let fast = false;
-  if (ram[SeaSfxCounter] >= 0xbf) {
+  if (!$br('Z_00:370', ram[SeaSfxCounter] < 0xbf)) {
     // Counter >= $BF: increase volume fast.
     ram[STEP]++;
-    fast = ram[STEP] !== 0; // BNE @SetSeaSfxParams, else falls into the slow path
+    fast = $br('Z_00:374', ram[STEP] !== 0); // BNE @SetSeaSfxParams, else falls into the slow path
   }
   if (!fast) {
     // Decrease volume slowly down to $10 when (counter MOD 8) = 7.
-    if ((ram[SeaSfxCounter] & 0x07) === 0x07 && ram[STEP] !== 0x10) ram[STEP]--;
+    const c = ram[SeaSfxCounter];
+    if (!$br('Z_00:380', !(c & 1)) && !$br('Z_00:382', !(c & 2)) && !$br('Z_00:384', !(c & 4)) &&
+      !$br('Z_00:387', ram[STEP] === 0x10)) ram[STEP]--;
   }
   // @SetSeaSfxParams
   write(NoiseVolume_400C, ram[STEP]);

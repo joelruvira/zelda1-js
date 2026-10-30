@@ -2,6 +2,7 @@
 // resets and the invincibility timer (Z_07, Z_04, Z_01 BANK_01_CODE).
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjType, ObjShoveDir, ObjShoveDistance, ObjTimer, ObjState, ObjInvincibilityTimer,
   ObjUninitialized, ObjMetastate, EmptyMonsterSlot, FrameCounter,
@@ -11,10 +12,10 @@ import { SetShoveInfoWith0 } from '../movement/shove.js';
 /** DestroyObject_WRAM (Z_01, runs from WRAM). A = 0, X = object. @returns A = 1 */
 export function DestroyObject_WRAM(a, x) {
   // DestroyObject_WRAM (Z_01)
-  ram[ObjShoveDir + x] = a;
-  ram[ObjShoveDistance + x] = a;
-  ram[ObjTimer + x] = a;
-  ram[ObjState + x] = a;
+  ram[(ObjShoveDir + x) & 0xff] = a; // STA zp,X: wraps inside page 0
+  ram[(ObjShoveDistance + x) & 0xff] = a;
+  ram[(ObjTimer + x) & 0xff] = a;
+  ram[(ObjState + x) & 0xff] = a;
   ram[ObjInvincibilityTimer + x] = a;
   ram[ObjUninitialized + x] = 0xff;
   ram[ObjMetastate + x] = 0x01;
@@ -26,8 +27,8 @@ export function DestroyMonster_Bank4(x) {
   // DestroyMonster_Bank4 (Z_04)
   ram[ObjType + x] = 0x00;
   const a = SetShoveInfoWith0(0x00, x);
-  ram[ObjTimer + x] = a;
-  ram[ObjState + x] = a;
+  ram[(ObjTimer + x) & 0xff] = a; // STA zp,X
+  ram[(ObjState + x) & 0xff] = a;
   ram[ObjInvincibilityTimer + x] = a;
   ram[ObjUninitialized + x] = 0xff;
   ram[ObjMetastate + x] = 0x01;
@@ -58,9 +59,10 @@ export function FindEmptyMonsterSlot() {
   let a = 0;
   for (;;) {
     y--;
-    if (y === 0) break; // @End
+    if ($br('Z_07:5828', y === 0)) break; // @End
+    $pxa('Z_07:5829', ObjType, y);
     a = ram[ObjType + y];
-    if (a !== 0) continue;
+    if ($br('Z_07:5830', a !== 0)) continue;
     ram[EmptyMonsterSlot] = y;
     break;
   }
@@ -70,15 +72,16 @@ export function FindEmptyMonsterSlot() {
 /** DecrementInvincibilityTimer (Z_07). X = object: every other frame, decrement its timer. */
 export function DecrementInvincibilityTimer(x) {
   // DecrementInvincibilityTimer (Z_07)
-  if (ram[ObjInvincibilityTimer + x] === 0) return;
-  if (ram[FrameCounter] & 0x01) return; // LSR / BCS
+  $pxa('Z_07:5783', ObjInvincibilityTimer, x);
+  if ($br('Z_07:5784', ram[ObjInvincibilityTimer + x] === 0)) return;
+  if ($br('Z_07:5787', (ram[FrameCounter] & 0x01) !== 0)) return; // LSR / BCS
   ram[ObjInvincibilityTimer + x]--;
 }
 
 /** ResetObjMetastateAndTimer (Z_07). X = object. @returns A = 0 */
 export function ResetObjMetastateAndTimer(x) {
   // ResetObjMetastateAndTimer (Z_07)
-  ram[ObjTimer + x] = 0x00;
+  ram[(ObjTimer + x) & 0xff] = 0x00;
   return ResetObjMetastate(x); // falls through
 }
 

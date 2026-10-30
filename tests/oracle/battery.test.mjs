@@ -15,7 +15,7 @@ const skip = !process.env.BATTERY ? 'set BATTERY=1 (slow)'
   : !romExists() ? 'roms/zelda.nes not present' : !(await hasJsnes()) ? 'jsnes not installed' : false;
 const TOOL = join(REPO_ROOT, 'tools/oracle/battery.mjs');
 
-test('battery: every movie in lockstep, no difference outside the documented timing classes', { skip, timeout: 4 * 3600e3 }, () => {
+test('battery: every movie in lockstep, RAM/SRAM diff 0 and a pixel-perfect picture on every frame', { skip, timeout: 4 * 3600e3 }, () => {
   const r = spawnSync(process.execPath, ['--no-warnings', TOOL, 'movies'], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 1 << 26 });
   const sum = JSON.parse(readFileSync(join(REPO_ROOT, 'out/battery/movies-summary.json'), 'utf8'));
   const bad = sum.reports.filter((x) => x.defects);
@@ -26,6 +26,12 @@ test('battery: every movie in lockstep, no difference outside the documented tim
     assert.equal(x.compared, x.frames + 1, `${x.movie}: compared ${x.compared} of ${x.frames + 1}`);
     assert.equal(x.fbCompared + x.noFb.length, x.frames, `${x.movie}: pictures compared ${x.fbCompared} of ${x.frames}`);
   }
+  // pixel perfect with the cycle tracker (jsnes-compat, the default): no differing pixel in any movie
+  const px = sum.reports.filter((x) => x.px || x.pxFrames);
+  assert.equal(px.length, 0, `picture differs in ${px.map((x) => `${x.movie} (${x.pxFrames} frames, ${x.px} px)`).join(', ')}`);
+  // and every video frame (lag frames inside long NMIs included), with the same number of video frames
+  const vid = sum.reports.filter((x) => !x.video || x.video.differing || x.video.oracle !== x.video.port);
+  assert.equal(vid.length, 0, `video frames differ in ${vid.map((x) => `${x.movie} ${JSON.stringify(x.video)}`).join(', ')}`);
 });
 
 test('battery: boot from empty, garbage and corrupt-checksum SRAM', { skip, timeout: 3600e3 }, () => {

@@ -2,11 +2,13 @@
 // PlayEffect, PlayBoomerangSfx, SilenceAllSound. Package P02.
 
 import { ram } from '../../core/ram.js';
+import { $br } from '../../core/timing.js';
 import { SongRequest, ObjTimer, Tune0Request, EffectRequest, Tune0, Tune1 } from '../../core/vars.js';
 
 /** PlaySample (Z_01): SampleRequest |= A. Returns A (the new request byte). */
 export function PlaySample(a) {
   // PlaySample (Z_01)
+  $br('Z_01:2980', true);
   return requestSound(a, 0x01);
 }
 
@@ -26,7 +28,7 @@ function requestSound(a, y) {
 /** PlayBoomerangSfx (Z_01): Y = effect bit (2); replays every $A frames using ObjTimer+19. */
 export function PlayBoomerangSfx(y) {
   // PlayBoomerangSfx (Z_01)
-  if (ram[ObjTimer + 19] !== 0) return;
+  if ($br('Z_01:3096', ram[ObjTimer + 19] !== 0)) return;
   PlayEffect(y);
   ram[ObjTimer + 19] = 0x0a;
 }

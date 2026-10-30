@@ -4,6 +4,7 @@
 // ($zp),Y pointers, register writes and anything whose target is computed.
 
 import { ram, sram } from './ram.js';
+import { timing } from './timing.js';
 
 export const bus = {
   rom: null, // Rom
@@ -29,6 +30,8 @@ export function connect(parts) {
 export function read(addr) {
   addr &= 0xffff;
   if (addr < 0x2000) return ram[addr & 0x7ff];
+  // cycle tracker (core/timing.js): I/O reads are breadcrumbs; the PPU is moved to the access cycle
+  if (addr < 0x4020 && timing.on) timing.io(addr, false, 0);
   if (addr < 0x4000) {
     switch (addr & 7) {
       case 2: return bus.ppu.readStatus();
@@ -49,6 +52,12 @@ export function write(addr, value) {
   addr &= 0xffff;
   value &= 0xff;
   if (addr < 0x2000) { ram[addr & 0x7ff] = value; return; }
+  // cycle tracker: I/O and mapper writes are breadcrumbs (the PPU is moved to the access cycle)
+  let timed = false;
+  if (addr < 0x4020 || addr >= 0x8000) {
+    if (timing.on) timed = timing.io(addr, true, value) >= 0;
+    else if (timing.enabled) timing.noteWrite(addr, value);
+  }
   if (addr < 0x4000) {
     const p = bus.ppu;
     switch (addr & 7) {
@@ -62,7 +71,11 @@ export function write(addr, value) {
     }
     return;
   }
-  if (addr === 0x4014) { bus.ppu.oamDMA(ram.subarray(value << 8, (value << 8) + 256)); bus.ppu.cpuCycles(513); return; }
+  if (addr === 0x4014) {
+    bus.ppu.oamDMA(ram.subarray(value << 8, (value << 8) + 256));
+    if (!timed) bus.ppu.cpuCycles(513); // the tracker counts 513/514 itself
+    return;
+  }
   if (addr === 0x4016) { bus.input?.write4016(value); return; }
   if (addr < 0x4018) { bus.apuWrite?.(addr, value); return; }
   if (addr < 0x6000) return;

@@ -5,6 +5,7 @@ import { ram, peek } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   GameSubmode, GameMode, IsUpdatingMode, WhirlwindTeleportingState, WhirlwindPrevRoomId, RoomId,
   SecretColorCycle, CurOpenedDoors, PrevOpenedDoors, PrevRow, CurRow, NextRoomId, ObjDir, CurLevel,
@@ -47,13 +48,13 @@ export function InitMode7_Sub1() {
   ram[PrevRow]--; // TODO in the asm: ?
   ram[GameSubmode]++;
   CalculateNextRoom();
-  if (ram[NextRoomId] & 0x80) return; // @Exit: invalid, the mode was changed to load the OW
+  if ($br('Z_05:753', (ram[NextRoomId] & 0x80) !== 0)) return; // @Exit: invalid, the mode was changed to load the OW
   const saved = ram[RoomId]; // PHA
   // Only when going up is the current room drawn in NT 2; otherwise lay out the next room.
-  if (ram[ObjDir] !== 0x08) ram[RoomId] = ram[NextRoomId];
+  if (!$br('Z_05:764', ram[ObjDir] === 0x08)) ram[RoomId] = ram[NextRoomId];
   FillPlayAreaAttrs(ram[RoomId]);
   ram[CurRow] = 0x15; // start at the bottom row
-  if (ram[ObjDir] === 0x08) LayOutDoorsPrev();
+  if ($br('Z_05:773', ram[ObjDir] === 0x08)) LayOutDoorsPrev();
   else LayOutRoom();
   ram[RoomId] = saved; // @RestoreRoomId
 }
@@ -61,7 +62,7 @@ export function InitMode7_Sub1() {
 /** LayOutDoorsPrev (Z_05): in UW, lay out the doors with PrevOpenedDoors as the opened doors. */
 export function LayOutDoorsPrev() {
   // LayOutDoorsPrev (Z_05)
-  if (ram[CurLevel] === 0) return; // OW
+  if ($br('Z_05:788', ram[CurLevel] === 0)) return; // OW
   const saved = ram[CurOpenedDoors];
   ram[CurOpenedDoors] = ram[PrevOpenedDoors];
   LayOutDoors();
@@ -71,8 +72,8 @@ export function LayOutDoorsPrev() {
 export function InitMode7_Sub0() {
   // InitMode7_Sub0 (Z_05)
   // Teleporting: use the room that makes it look like we scrolled to a dungeon entrance.
-  if (ram[WhirlwindTeleportingState] !== 0) ram[RoomId] = ram[WhirlwindPrevRoomId];
-  if (ram[SecretColorCycle] === 0) return L1433A_IncSubmode();
+  if (!$br('Z_05:803', ram[WhirlwindTeleportingState] === 0)) ram[RoomId] = ram[WhirlwindPrevRoomId];
+  if ($br('Z_05:808', ram[SecretColorCycle] === 0)) return L1433A_IncSubmode();
   return AnimatePond(); // reverse the flute secret (pond colors)
 }
 
@@ -82,9 +83,9 @@ export function InitMode7_Sub2() {
   // Target NT 2 instead of NT 0 ($2100 -> $2800, +7 on the high byte).
   ram[DynTileBuf] = ((ram[DynTileBuf] & 0x0f) + 0x27) & 0xff;
   // Horizontal scroll: account for the status bar (+$100) so the play areas line up.
-  if (ram[ObjDir] < 0x04) ram[DynTileBuf]++;
+  if (!$br('Z_05:833', ram[ObjDir] >= 0x04)) ram[DynTileBuf]++;
   ram[CurRow]--;
-  if (ram[CurRow] & 0x80) return L1433A_IncSubmode();
+  if (!$br('Z_05:844', (ram[CurRow] & 0x80) === 0)) return L1433A_IncSubmode();
 }
 
 /** L1433A_IncSubmode (Z_05, label in InitMode7_Sub2) */
@@ -95,10 +96,12 @@ function L1433A_IncSubmode() {
 export function InitMode7_Sub3And4_TransferPlayAreaAttrsToNT2() {
   // InitMode7_Sub3And4_TransferPlayAreaAttrsToNT2 (Z_05): top half in submode 3, bottom half in 4
   // Vertical: $2BC0; horizontal: $2BD0 (64 pixels down).
-  let a = (ram[ObjDir] & 0x08) || (ram[ObjDir] & 0x04) ? 0xc0 : 0xd0;
+  let a;
+  if ($br('Z_05:856', (ram[ObjDir] & 0x08) !== 0) || !$br('Z_05:859', (ram[ObjDir] & 0x04) === 0)) a = 0xc0;
+  else { a = 0xd0; $br('Z_05:880', true); }
   let y = 0x17; // @TransferHalfPlayAreaAttrs
   const x = ram[GameSubmode];
-  if (x !== 0x03) ({ a, y } = GetPlayAreaAttrsBottomHalfInfo(a));
+  if (!$br('Z_05:869', x === 0x03)) ({ a, y } = GetPlayAreaAttrsBottomHalfInfo(a));
   return CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT2(a, x, y);
 }
 
@@ -107,8 +110,8 @@ export function InitMode7_Sub5() {
   ram[FadeCycle] = 0x00; // in case we don't need to fade
   const dir = ram[ObjDir];
   // Horizontal: cue a row of blanks above the play area.
-  if (dir < 0x04) ram[TileBufSelector] = 0x4e;
-  if (dir === 0x08) {
+  if (!$br('Z_05:887', dir >= 0x04)) ram[TileBufSelector] = 0x4e;
+  if (!$br('Z_05:901', dir !== 0x08)) {
     // @Vertical, up: lay out the next room now (the current one was drawn to NT 2).
     const saved = ram[RoomId];
     ram[RoomId] = ram[NextRoomId];
@@ -116,10 +119,10 @@ export function InitMode7_Sub5() {
     ram[RoomId] = saved;
   }
   // @CheckDark
-  if (IsDarkRoom_Bank5(ram[NextRoomId]) === 0) return InitMode7_Finish();
-  if (IsDarkRoom_Bank5(ram[RoomId]) !== 0) {
+  if ($br('Z_05:920', IsDarkRoom_Bank5(ram[NextRoomId]) === 0)) return InitMode7_Finish();
+  if ($br('Z_05:925', IsDarkRoom_Bank5(ram[RoomId]) !== 0)) {
     // @CheckIfLit: dark to dark, nothing to do unless it was lit.
-    if (ram[CandleState] === 0) return InitMode7_Finish();
+    if (!$br('Z_05:938', ram[CandleState] !== 0)) { $br('Z_05:942', true); return InitMode7_Finish(); }
   }
   // @DarkenRoom: start a fade-to-black cycle.
   ram[CandleState] = 0x00;
@@ -129,7 +132,7 @@ export function InitMode7_Sub5() {
 
 export function InitMode7_Sub6() {
   // InitMode7_Sub6 (Z_05)
-  if (AnimateWorldFading() !== 0) return; // L143AD_Exit: still fading
+  if ($br('Z_05:946', AnimateWorldFading() !== 0)) return; // L143AD_Exit: still fading
   return InitMode7_Finish();
 }
 
@@ -145,7 +148,7 @@ export function WriteAndEnableSprite0() {
   // WriteAndEnableSprite0 (Z_05)
   ram[IsSprite0CheckActive] = 0x01;
   const desc = table(bus.rom, 'Sprite0Descriptor');
-  for (let y = 3; y >= 0; y--) ram[Sprites + y] = desc.byte(y);
+  for (let y = 3; ;) { $pxa('Z_05:966', desc.addr, y); ram[Sprites + y] = desc.byte(y); y--; if (!$br('Z_05:969', y >= 0)) break; }
 }
 
 /** SetEnteringDoorwayAsCurOpenedDoors (Z_05): CurOpenedDoors = opposite of Link's direction. Uses [00]. */
@@ -165,26 +168,32 @@ export function FillPlayAreaAttrs(a) {
   // FillPlayAreaAttrs (Z_05)
   const sel = table(bus.rom, 'RoomPaletteSelectorToNTAttr');
   let y = a & 0xff;
+  $pxa('Z_05:993', LevelBlockAttrsA, y);
   let x = peek(LevelBlockAttrsA + y) & 0x03; // outer palette selector
+  $pxa('Z_05:996', sel.addr, x);
   a = sel.byte(x);
-  for (x = 0x2f; x >= 0; x--) ram[PlayAreaAttrs + x] = a;
+  for (x = 0x2f; ;) { ram[PlayAreaAttrs + x] = a; x--; if (!$br('Z_05:1001', x >= 0)) break; }
+  $pxa('Z_05:1002', LevelBlockAttrsB, y);
   x = peek(LevelBlockAttrsB + y) & 0x03; // inner palette selector
   // Inner attributes: offsets 9 to $26, skipping the left and right edges.
   y = 0x09;
   do {
     // @LoopRow
     const col = y & 0x07;
-    if (col !== 0 && col !== 0x07) {
-      if (y >= 0x21) {
+    if (!$br('Z_05:1012', col === 0) && !$br('Z_05:1014', col === 0x07)) {
+      if ($br('Z_05:1016', y >= 0x21)) {
         // @CombineInnerOuter: inner attributes only affect the top half of the bottom row.
+        $pxa('Z_05:1030', sel.addr, x);
         ram[0x00] = sel.byte(x) & 0x0f;
+        $pxa('Z_05:1033', PlayAreaAttrs, y);
         ram[PlayAreaAttrs + y] = (ram[PlayAreaAttrs + y] & 0xf0) | ram[0x00];
       } else {
+        $pxa('Z_05:1017', sel.addr, x);
         ram[PlayAreaAttrs + y] = sel.byte(x);
       }
     }
     y++; // @NextLoopRow
-  } while (y < 0x27);
+  } while ($br('Z_05:1023', y < 0x27));
 }
 
 // ------------------------------------------------------------------ update (8 submodes)
@@ -208,8 +217,8 @@ export function UpdateMode7Scroll_Sub0() {
   // UpdateMode7Scroll_Sub0 (Z_05)
   ram[VScrollAddrLo] = 0x00;
   ram[CurHScroll] = 0x00;
-  if (ram[ObjDir] & 0x08) return ScrollUp();
-  if (!(ram[ObjDir] & 0x04)) return ScrollHorizontal();
+  if ($br('Z_05:1063', (ram[ObjDir] & 0x08) !== 0)) return ScrollUp();
+  if ($br('Z_05:1066', (ram[ObjDir] & 0x04) === 0)) return ScrollHorizontal();
   // Scrolling down: from $2100, the top of the play area in NT 0 (current room).
   ram[VScrollAddrHi] = 0x21;
   ram[CurRow] = 0xff; // the scrolling first increments it
@@ -225,8 +234,8 @@ export function Inc2Submodes() {
 
 /** ScrollHorizontal (Z_05, part of UpdateMode7Scroll_Sub0): a starting column out of the play area. */
 function ScrollHorizontal() {
-  let y = ram[CurLevel] !== 0 ? 0xa0 : 0xe0;
-  if (ram[ObjDir] & 0x02) y = ram[CurLevel] !== 0 ? 0x81 : 0x41; // scrolling left
+  let y = $br('Z_05:1090', ram[CurLevel] !== 0) ? 0xa0 : 0xe0;
+  if (!$br('Z_05:1095', (ram[ObjDir] & 0x02) === 0)) y = $br('Z_05:1100', ram[CurLevel] !== 0) ? 0x81 : 0x41; // scrolling left
   ram[CurColumn] = y; // @SetColumn
   return Inc2Submodes();
 }
@@ -251,7 +260,7 @@ export function UpdateMode7Scroll_Sub1() {
  */
 export function ChooseAttrSourceAndDestForSubmode() {
   // ChooseAttrSourceAndDestForSubmode (Z_05)
-  if (ram[GameSubmode] === 0) return { a: 0xd0, y: 0x17 };
+  if ($br('Z_05:1127', ram[GameSubmode] === 0)) return { a: 0xd0, y: 0x17 };
   return GetPlayAreaAttrsBottomHalfInfo(0xd0); // falls through
 }
 
@@ -268,7 +277,7 @@ export function UpdateMode7Scroll_Sub2() {
   // UpdateMode7Scroll_Sub2 (Z_05): VScrollStartFrame so that vertical scrolling starts next frame
   ram[GameSubmode]++;
   let a = (ram[FrameCounter] + 1) & 0x03;
-  if (ram[CurLevel] === 0) a &= 0x01;
+  if (!$br('Z_05:1158', ram[CurLevel] !== 0)) a &= 0x01;
   ram[VScrollStartFrame] = a;
 }
 
@@ -276,7 +285,7 @@ export function UpdateMode7Scroll_Sub3() {
   // UpdateMode7Scroll_Sub3 (Z_05)
   ScrollWorld();
   CopyColumnOrRowToTileBuf();
-  if (ram[GameSubmode] !== 0x03) {
+  if (!$br('Z_05:1169', ram[GameSubmode] === 0x03)) {
     // The submode advanced: invalidate current and previous row, reset the column.
     ram[CurRow] = 0xff;
     ram[PrevRow] = 0xff;
@@ -286,8 +295,8 @@ export function UpdateMode7Scroll_Sub3() {
 
 export function UpdateMode7Scroll_Sub6() {
   // UpdateMode7Scroll_Sub6 (Z_05)
-  if (ram[CurLevel] === 0) return UpdateMode7Scroll_Sub7();
-  if (IsDarkRoom_Bank5(ram[RoomId]) === 0) return UpdateMode7Scroll_Sub7();
+  if ($br('Z_05:1180', ram[CurLevel] === 0)) return UpdateMode7Scroll_Sub7();
+  if ($br('Z_05:1183', IsDarkRoom_Bank5(ram[RoomId]) === 0)) return UpdateMode7Scroll_Sub7();
   // CurRow = 0 tells mode 4 it may have to brighten the room (scrolled from a dark one).
   ram[CurRow] = 0x00;
   ram[GameSubmode]++;
@@ -306,7 +315,7 @@ export function UpdateMode7Scroll_Sub7() {
 
 export function UpdateMode7Scroll_Sub4() {
   // UpdateMode7Scroll_Sub4 (Z_05)
-  if (!(ram[ObjDir] & 0x08)) return UpdateMode7Scroll_Sub4And5_TransferNTAttrs();
+  if ($br('Z_05:1211', (ram[ObjDir] & 0x08) === 0)) return UpdateMode7Scroll_Sub4And5_TransferNTAttrs();
   return Inc2Submodes(); // up: go to submode 6
 }
 
@@ -314,9 +323,9 @@ export function UpdateMode7Scroll_Sub4And5_TransferNTAttrs() {
   // UpdateMode7Scroll_Sub4And5_TransferNTAttrs (Z_05): new room's attributes to NT 0 ($23D0)
   let a = 0xd0;
   let y = 0x17;
-  if (ram[GameSubmode] === 0x04) return CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT0(a, y);
+  if ($br('Z_05:1219', ram[GameSubmode] === 0x04)) return CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT0(a, y);
   // Bottom half.
-  if (ram[ObjDir] < 0x04) ram[OddBaseNameTableOverride] = 0x00; // horizontal: stop using NT 1
+  if (!$br('Z_05:1225', ram[ObjDir] >= 0x04)) ram[OddBaseNameTableOverride] = 0x00; // horizontal: stop using NT 1
   ({ a, y } = GetPlayAreaAttrsBottomHalfInfo(a));
   return CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT0(a, y);
 }
@@ -331,14 +340,14 @@ export function CueTransferPlayAreaAttrsHalfAndAdvanceSubmodeNT0(a, y) {
 export function CopyColumnOrRowToTileBuf() {
   // CopyColumnOrRowToTileBuf (Z_05)
   let a = ram[CurRow];
-  if (a < 0x16) {
-    if (a === ram[PrevRow]) return; // don't repeat
+  if (!$br('Z_05:1247', a >= 0x16)) {
+    if ($br('Z_05:1249', a === ram[PrevRow])) return; // don't repeat
     ram[PrevRow] = a;
     return CopyRowToTileBuf();
   }
   // @CheckColumn
   a = ram[CurColumn];
-  if (a === 0 || a >= 0x21) return;
+  if ($br('Z_05:1255', a === 0) || $br('Z_05:1257', a >= 0x21)) return;
   return CopyColumnToTileBuf();
 }
 
@@ -355,8 +364,9 @@ export function CopyPlayAreaAttrsHalfToDynTransferBuf(a, x, y) {
   ram[DynTileBuf + 3 + x] = 0xff;
   y &= 0xff;
   do {
+    $pxa('Z_05:6573', PlayAreaAttrs, y);
     ram[DynTileBuf + 2 + x] = ram[PlayAreaAttrs + y];
     y = (y - 1) & 0xff;
     x--;
-  } while (x !== 0);
+  } while ($br('Z_05:6577', x !== 0));
 }

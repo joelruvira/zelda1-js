@@ -17,6 +17,7 @@ import { Anim_SetSpriteDescriptorRedPaletteRow } from '../draw/sprites.js';
 import { RevealAndFlagSecretStairsObj } from './tileobjects.js';
 import { DrawFairy } from '../items/fairy.js';
 import { DecreaseObjectAngle, RotateObjectLocation } from '../enemies/common.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitPondFairy (Z_04). X = fairy slot: "item taken" tune, position ($78, $7D). L10797_Exit is its RTS. */
 export function InitPondFairy(x) {
@@ -31,10 +32,10 @@ export function UpdatePondFairy(x) {
   // UpdatePondFairy (Z_04)
   DrawFairy(x);
   const a = ram[ObjState + 1];
-  if (a !== 0) return PondFairy_HandleOtherStates(a, x);
+  if ($br('Z_04:3379', a !== 0)) return PondFairy_HandleOtherStates(a, x);
   // State 0: wait for Link at the edge of the pond.
-  if (ram[ObjY] !== 0xad) return;
-  if (ram[ObjX] < 0x70 || ram[ObjX] >= 0x81) return;
+  if ($br('Z_04:3386', ram[ObjY] !== 0xad)) return;
+  if ($br('Z_04:3391', ram[ObjX] < 0x70) || $br('Z_04:3393', ram[ObjX] >= 0x81)) return;
   ram[ObjState + 1]++;
   ram[ObjState] = 0x40;
   ram[World_IsFillingHearts] = 0x40;
@@ -44,9 +45,9 @@ export function UpdatePondFairy(x) {
 // @returns X = CurObjIndex when it draws.
 function PondFairy_HandleOtherStates(a, x) {
   let draw = false;
-  if (a === 0x01) {
+  if (!$br('Z_04:3407', a !== 0x01)) {
     // State 1: flying and filling hearts.
-    if (ram[World_IsFillingHearts] !== 0) {
+    if ($br('Z_04:3413', ram[World_IsFillingHearts] !== 0)) {
       draw = true;
     } else {
       ram[ObjState + 1]++;
@@ -56,8 +57,8 @@ function PondFairy_HandleOtherStates(a, x) {
   }
   if (!draw) {
     // @CheckState2 (from state 1 with A = $50: returns)
-    if (a !== 0x02) return;
-    if (ram[ObjTimer + 1] === 0) {
+    if ($br('Z_04:3429', a !== 0x02)) return;
+    if (!$br('Z_04:3435', ram[ObjTimer + 1] !== 0)) {
       ram[ObjState + 1]++;
       ram[ObjState] = 0x00;
     }
@@ -82,12 +83,13 @@ export function PondFairy_MoveHearts() {
   for (;;) {
     // @LoopHeart
     let move = true;
-    if (ram[ObjState + x] === 0) {
+    if (!$br('Z_04:3479', ram[ObjState + x] !== 0)) {
       let setUp = true;
-      if (x !== 0x02) {
+      if (!$br('Z_04:3486', x === 0x02)) {
         // The heart in slot 2 is set up first; while its state is 0 this loops (as the original).
-        if (ram[ObjState + 2] === 0) continue;
-        if (ram[ObjAngleWhole + 2] !== startAngles.byte(x - 3)) {
+        if ($br('Z_04:3494', ram[ObjState + 2] === 0)) continue;
+        $pxa('Z_04:3504', startAngles.addr, x - 3);
+        if ($br('Z_04:3505', ram[ObjAngleWhole + 2] !== startAngles.byte(x - 3))) {
           setUp = false;
           move = false; // @NextLoopHeart
         }
@@ -114,7 +116,7 @@ export function PondFairy_MoveHearts() {
     }
     // @NextLoopHeart
     x++;
-    if (x === 0x0a) return x;
+    if (!$br('Z_04:3562', x !== 0x0a)) return x;
   }
 }
 
@@ -122,10 +124,10 @@ export function PondFairy_MoveHearts() {
 export function UpdateFluteSecret(x) {
   // UpdateFluteSecret (Z_07)
   const y = ram[SecretColorCycle];
-  if (y >= 0x0c) return; // L1FF28_Exit
-  if ((ram[FrameCounter] & 0x07) !== 0x04) return;
+  if ($br('Z_07:5881', y >= 0x0c)) return; // L1FF28_Exit
+  if ($br('Z_07:5887', (ram[FrameCounter] & 0x07) !== 0x04)) return;
   ram[SecretColorCycle]++;
-  if (y === 0x0b) return RevealPondStairs(x);
+  if ($br('Z_07:5896', y === 0x0b)) return RevealPondStairs(x);
   return CueTransferPondPaletteRow(y); // falls through
 }
 
@@ -134,10 +136,16 @@ export function CueTransferPondPaletteRow(y) {
   // CueTransferPondPaletteRow (Z_07)
   const saved = y; // TYA / PHA
   const template = table(bus.rom, 'WaterPaletteTransferBufTemplate');
-  for (y = 0x07; y >= 0; y--) ram[DynTileBuf + y] = template.byte(y); // @CopyBytes
+  for (y = 0x07; ; y--) { // @CopyBytes
+    $pxa('Z_07:5909', template.addr, y);
+    ram[DynTileBuf + y] = template.byte(y);
+    if (!$br('Z_07:5912', y - 1 >= 0)) break;
+  }
   y = saved; // PLA / TAY
-  ram[DynTileBuf + 6] = table(bus.rom, 'PondCycleColors').byte(y);
-  if (y !== 0x0a) return;
+  const colors = table(bus.rom, 'PondCycleColors');
+  $pxa('Z_07:5915', colors.addr, y);
+  ram[DynTileBuf + 6] = colors.byte(y);
+  if ($br('Z_07:5918', y !== 0x0a)) return;
   ram[ObjectFirstUnwalkableTile] = 0x99; // most water tiles become walkable
 }
 
@@ -151,7 +159,7 @@ function RevealPondStairs(x) {
 /** AnimatePond (Z_07): reverses the pond color cycle (one step every other 4 frames). */
 export function AnimatePond() {
   // AnimatePond (Z_07)
-  if ((ram[FrameCounter] & 0x04) === 0) return; // L1FF28_Exit
+  if ($br('Z_07:5940', (ram[FrameCounter] & 0x04) === 0)) return; // L1FF28_Exit
   ram[SecretColorCycle]--;
   return CueTransferPondPaletteRow(ram[SecretColorCycle]);
 }

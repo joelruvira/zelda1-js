@@ -5,6 +5,7 @@ import { ram, peek } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
 import { tableJump } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   GameSubmode, RoomId, CellarSourceRoomId, LevelBlockAttrsA, ObjX, ObjY, ObjDir, ObjGridOffset,
   IsUpdatingMode, DoorwayDir, ObjInputDir, ObjState, UndergroundExitType, CurLevel,
@@ -39,7 +40,7 @@ export function InitMode9_TransferAttrs() {
  * InitModeSubroom_AnimateFade.
  */
 export function StartFadeCycleAndAnimate(a) {
-  if (ram[CurLevel] === 0) return InitModeSubroom_AdvanceSubmode();
+  if ($br('Z_05:6624', ram[CurLevel] === 0)) return InitModeSubroom_AdvanceSubmode();
   SetFadeCycleAndAdvanceSubmode(a);
   return InitModeSubroom_AnimateFade(); // falls through
 }
@@ -51,6 +52,7 @@ export function InitMode9_FadeToDark() {
 
 export function InitMode9_FadeToLight() {
   // InitMode9_FadeToLight (Z_05): dark cellar -> light cellar cycle (BNE always taken)
+  $br('Z_05:6634', true);
   return StartFadeCycleAndAnimate(0xa0);
 }
 
@@ -62,7 +64,9 @@ export function InitMode9_EnterCellar() {
   ram[GameSubmode] = submode; // PLA
   // Came from the cellar's room A: ladder on the left (index 0), else on the right.
   let x = 0;
-  if (ram[CellarSourceRoomId] !== peek(LevelBlockAttrsA + ram[RoomId])) x = 1;
+  $pxa('Z_05:6722', LevelBlockAttrsA, ram[RoomId]);
+  if (!$br('Z_05:6723', ram[CellarSourceRoomId] === peek(LevelBlockAttrsA + ram[RoomId]))) x = 1;
+  $pxa('Z_05:6726', table(bus.rom, 'CellarLadderXs').addr, x);
   ram[ObjX] = table(bus.rom, 'CellarLadderXs').byte(x);
   ram[ObjY] = 0x41; // facing down at Y = $41
   ram[ObjDir] = 0x04;
@@ -76,7 +80,7 @@ export function InitMode9_WalkCellar() {
   // InitMode9_WalkCellar (Z_05): walk down the cellar stairs until Y = $5D
   ram[ObjInputDir] = ram[ObjDir];
   UpdatePlayer();
-  if (ram[ObjY] !== 0x5d) return;
+  if ($br('Z_05:6754', ram[ObjY] !== 0x5d)) return;
   ram[ObjState] = 0x00; // reset player state
   ram[UndergroundExitType] = 0x01; // remember that this is a cellar
   ram[IsUpdatingMode] = 0x01; // start updating the mode

@@ -11,6 +11,7 @@ import { ram, peek } from '../../core/ram.js';
 import { read, write } from '../../core/bus.js';
 import { RoomId, CurLevel, LevelInfo_WorldFlagsAddr, LevelBlockAttrsD } from '../../core/vars.js';
 import { SaveKillCountOW, SaveKillCountUW } from '../objects/killcounts.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** GetRoomFlags (Z_07). @returns A = ([$00:01]),Y with [$00:01] = LevelInfo_WorldFlagsAddr, Y = RoomId */
 export function GetRoomFlags() {
@@ -18,6 +19,7 @@ export function GetRoomFlags() {
   ram[0x00] = peek(LevelInfo_WorldFlagsAddr);
   ram[0x01] = peek(LevelInfo_WorldFlagsAddr + 1);
   const y = ram[RoomId];
+  $pxa('Z_07:802', ram[0x00], y);
   return read((((ram[0x01] << 8) | ram[0x00]) + y) & 0xffff);
 }
 
@@ -31,12 +33,13 @@ export function MarkRoomVisited() {
 /** GetUniqueRoomId (Z_07). @returns A = LevelBlockAttrsD[RoomId] & $3F (Y = RoomId) */
 export function GetUniqueRoomId() {
   // GetUniqueRoomId (Z_07)
+  $pxa('Z_07:1136', LevelBlockAttrsD, ram[RoomId]);
   return peek(LevelBlockAttrsD + ram[RoomId]) & 0x3f;
 }
 
 /** SaveKillCount (Z_05): SaveKillCountOW in the OW (CurLevel = 0), else SaveKillCountUW. */
 export function SaveKillCount() {
   // SaveKillCount (Z_05); L1746E_Exit is its RTS
-  if (ram[CurLevel] === 0) return SaveKillCountOW();
+  if (!$br('Z_05:7337', ram[CurLevel] !== 0)) return SaveKillCountOW();
   SaveKillCountUW();
 }

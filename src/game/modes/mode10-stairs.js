@@ -2,6 +2,7 @@
 // AnimateAndDrawLinkBehindBackground, PutLinkBehindBackground). Package P13.
 
 import { ram } from '../../core/ram.js';
+import { $br } from '../../core/timing.js';
 import {
   SongEnvelopeSelector, EffectRequest, ObjY, StairsTargetY, IsUpdatingMode, ObjCollidedTile,
   FrameCounter, TargetMode, GameMode, Sprites,
@@ -13,7 +14,7 @@ import { Link_EndMoveAndAnimate } from '../link/anim.js';
 export function InitMode10() {
   // InitMode10 (Z_05)
   const a = GetCollidableTileStill(0x00); // the tile Link stands on (hotspot)
-  if (a === 0x24) {
+  if (!$br('Z_05:1398', a !== 0x24)) {
     // A cave or dungeon entrance (not a stairs tile).
     ram[SongEnvelopeSelector] = 0x00; // TODO in the asm: ?
     ram[EffectRequest] = 0x08; // stairs effect
@@ -24,11 +25,11 @@ export function InitMode10() {
 
 export function UpdateMode10Stairs_Full() {
   // UpdateMode10Stairs_Full (Z_05)
-  if (ram[ObjCollidedTile] === 0x24) {
+  if (!$br('Z_05:2310', ram[ObjCollidedTile] !== 0x24)) {
     // Move Link down 1 pixel every 4 frames until StairsTargetY.
-    if ((ram[FrameCounter] & 0x03) !== 0) return AnimateAndDrawLinkBehindBackground();
+    if ($br('Z_05:2315', (ram[FrameCounter] & 0x03) !== 0)) return AnimateAndDrawLinkBehindBackground();
     ram[ObjY]++;
-    if (ram[ObjY] !== ram[StairsTargetY]) return AnimateAndDrawLinkBehindBackground();
+    if ($br('Z_05:2319', ram[ObjY] !== ram[StairsTargetY])) return AnimateAndDrawLinkBehindBackground();
   }
   ram[GameMode] = ram[TargetMode]; // go to the target mode
   EndGameMode();

@@ -6,6 +6,7 @@ import { ram, sram, peek } from '../../core/ram.js';
 import { bus, write } from '../../core/bus.js';
 import { switchBank } from '../../core/asm.js';
 import { table, label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   CurLevel, ObjType, RoomId, UndergroundExitType, Tune1Request, LevelBlockAttrsA, LevelBlockAttrsB,
   LevelInfo_PalettesTransferBuf, TileBufSelector, FluteTimer, BrighteningRoom, MenuState, Paused,
@@ -52,44 +53,61 @@ export function InitMode5Play() {
   DrawSpritesBetweenRooms();
   Link_EndMoveAndAnimate();
   let x;
-  if (ram[CurLevel] !== 0) {
+  if (!$br('Z_07:1503', ram[CurLevel] === 0)) {
     // In UW: bosses and boss-like monsters with their own palette.
     const types = table(bus.rom, 'SpecialBossPaletteObjTypes');
     const sels = table(bus.rom, 'SpecialBossPaletteTransferBufSelectors');
     const a = ram[ObjType + 1];
-    for (let y = 0x08; y >= 0; y--) {
-      if (a !== types.byte(y)) continue;
-      x = sels.byte(y);
-      if (x !== 0) break;
-      x = undefined;
+    for (let y = 0x08; ;) {
+      // @FindSpecialBoss
+      $pxa('Z_07:1514', types.addr, y);
+      if (!$br('Z_07:1515', a !== types.byte(y))) {
+        $pxa('Z_07:1516', sels.addr, y);
+        x = sels.byte(y);
+        if ($br('Z_07:1517', x !== 0)) break;
+        x = undefined;
+      }
+      // @NextSpecialBoss
+      y--;
+      if (!$br('Z_07:1521', y >= 0)) { $br('Z_07:1522', true); break; } // BMI @UseLevelPalette (always)
     }
     if (x === undefined) {
       // @UseLevelPalette: patch the palette row 7 transfer buf with the level's row 7.
       const row7 = label('LevelPaletteRow7TransferBuf').addr - 0x6000;
-      for (let y = 0x03; y >= 0; y--) {
+      for (let y = 0x03; ;) {
+        $pxa('Z_07:1572', LevelInfo_PalettesTransferBuf + 31, y);
         sram[row7 + 3 + y] = peek(LevelInfo_PalettesTransferBuf + 31 + y);
+        y--;
+        if (!$br('Z_07:1575', y >= 0)) break;
       }
       x = 0x06;
     }
   } else {
     // In OW: room $0F walked into (not from underground): "secret found" tune.
-    if (ram[RoomId] === 0x0f && ram[UndergroundExitType] === 0) ram[Tune1Request] = 0x04;
+    if (!$br('Z_07:1531', ram[RoomId] !== 0x0f) && !$br('Z_07:1533', ram[UndergroundExitType] !== 0)) ram[Tune1Request] = 0x04;
     // @ChooseTileObjPalette: palette of a tile object with sprites.
     x = 0x20; // ghost palette row
     const a = ram[ObjType + 11];
     let checkAttr = false;
-    if (a === 0x65) {
+    if ($br('Z_07:1543', a === 0x65)) {
       checkAttr = false; // gravestone
-    } else if (a === 0x66) {
+    } else if ($br('Z_07:1545', a === 0x66)) {
       checkAttr = true; // Armos1
-    } else if (a !== 0x62) {
+    } else if ($br('Z_07:1547', a !== 0x62)) {
       x = 0x7a; // Armos2: red Armos palette row
+      $br('Z_07:1564', true); // BNE (always)
     } else {
       x = 0x24; // rock: brown palette row
       checkAttr = true;
     }
     // @UseXOrGreenPalette: an even inner palette attribute uses the green row.
-    if (checkAttr && !(peek(LevelBlockAttrsB + ram[RoomId]) & 0x01)) x = 0x22;
+    if (checkAttr) {
+      $pxa('Z_07:1555', LevelBlockAttrsB, ram[RoomId]);
+      if (!$br('Z_07:1557', (peek(LevelBlockAttrsB + ram[RoomId]) & 0x01) !== 0)) {
+        x = 0x22;
+        $br('Z_07:1559', true); // BNE (always)
+      }
+    }
   }
   // @SelectTransferBufAndFinishInitPlay
   ram[TileBufSelector] = x;
@@ -99,20 +117,20 @@ export function InitMode5Play() {
 /** UpdateMode5Play (Z_07): flute, candle, pause (Select), submenu (Start), else update the world. */
 export function UpdateMode5Play() {
   // UpdateMode5Play (Z_07)
-  if (ram[FluteTimer] !== 0) return; // L1EBF8_Exit
-  if (ram[BrighteningRoom] !== 0) {
+  if ($br('Z_07:1814', ram[FluteTimer] !== 0)) return; // L1EBF8_Exit
+  if (!$br('Z_07:1818', ram[BrighteningRoom] === 0)) {
     switchBank(4);
     return UpdateCandle();
   }
   // @CheckMenuAndPause
-  if (ram[MenuState] === 0) {
-    if (ram[Paused] !== 0x02 && (ram[ButtonsPressed] & 0x20)) {
+  if (!$br('Z_07:1826', ram[MenuState] !== 0)) {
+    if (!$br('Z_07:1829', ram[Paused] === 0x02) && !$br('Z_07:1835', (ram[ButtonsPressed] & 0x20) === 0)) {
       // Select toggles the pause; unpausing enables the sound again.
       ram[Paused] ^= 0x01;
-      if (ram[Paused] === 0) write(ApuStatus_4015, 0x0f);
+      if (!$br('Z_07:1839', ram[Paused] !== 0)) write(ApuStatus_4015, 0x0f);
     }
     // @CheckPaused
-    if (ram[Paused] !== 0) {
+    if (!$br('Z_07:1847', ram[Paused] === 0)) {
       switchBank(5);
       MaskCurPpuMaskGrayscale();
       return UpdateHeartsAndRupees(); // JMP
@@ -121,13 +139,13 @@ export function UpdateMode5Play() {
   // @CheckMenu
   HideObjectSprites();
   ram[ObjInputDir] = ram[ButtonsDown] & 0x0f;
-  if (ram[MenuState] !== 0) {
+  if (!$br('Z_07:1860', ram[MenuState] === 0)) {
     switchBank(5);
     MaskCurPpuMaskGrayscale();
     return UpdateMenuAndMeters(); // JMP
   }
   // @NotInMenu
-  if (ram[ButtonsPressed] & 0x10) {
+  if (!$br('Z_07:1872', (ram[ButtonsPressed] & 0x10) === 0)) {
     ram[MenuState]++; // start scrolling the submenu
     return;
   }
@@ -138,12 +156,12 @@ export function UpdateMode5Play() {
 export function BeginUpdateWorld() {
   // BeginUpdateWorld (Z_07)
   // With the clock, Link stays invincible.
-  if (ram[InvClock] !== 0) ram[ObjInvincibilityTimer] = (ram[ObjInvincibilityTimer] + 0x10) & 0xff;
+  if (!$br('Z_07:1880', ram[InvClock] === 0)) ram[ObjInvincibilityTimer] = (ram[ObjInvincibilityTimer] + 0x10) & 0xff;
   UpdatePlayer();
-  if (ram[IsUpdatingMode] === 0) return finishUpdatePlay(); // the mode changed
+  if (!$br('Z_07:1890', ram[IsUpdatingMode] !== 0)) return finishUpdatePlay(); // the mode changed
 
   // @CheckChaseTarget
-  if (ram[ChaseOtherTarget] === 0) {
+  if (!$br('Z_07:1896', ram[ChaseOtherTarget] !== 0)) {
     ram[ChaseTargetX] = ram[ObjX];
     ram[ChaseTargetY] = ram[ObjY];
   }
@@ -155,11 +173,11 @@ export function BeginUpdateWorld() {
   UpdateBombOrFire(0x11);
   UpdateRodOrArrow(0x12);
 
-  if (ram[ChaseLongTimer] === 0) {
+  if (!$br('Z_07:1920', ram[ChaseLongTimer] !== 0)) {
     ram[ChaseLongTimer] = ram[Random + 1] & 0x07;
     ram[ChaseOtherTarget] ^= 0x01;
     // Chasing the other target: if Link has not moved horizontally, reflect his last position.
-    if (ram[ChaseOtherTarget] !== 0 && ram[ChaseTargetX] === ram[ObjX]) {
+    if (!$br('Z_07:1933', ram[ChaseOtherTarget] === 0) && !$br('Z_07:1946', ram[ChaseTargetX] !== ram[ObjX])) {
       ram[ChaseTargetX] ^= 0xff;
       ram[ChaseTargetY] ^= 0xff;
     }
@@ -169,25 +187,32 @@ export function BeginUpdateWorld() {
   do {
     let x = ram[CurObjIndex];
     DecrementInvincibilityTimer(x);
-    if (ram[ObjType + x] !== 0) {
+    $pxa('Z_07:1957', ObjType, x);
+    if (!$br('Z_07:1958', ram[ObjType + x] === 0)) {
+      $pxa('Z_07:1959', ObjType, x);
       UpdateObject(ram[ObjType + x], x);
       // Autonomous objects that don't check collisions and draw themselves: do it for them.
       x = ram[CurObjIndex];
-      if (ram[ObjMetastate + x] === 0 && !(ram[ObjAttr + x] & 0x01)) {
-        if (!(ram[ObjAttr + x] & 0x04)) AnimateAndDrawObjectWalking(x);
-        x = ram[CurObjIndex];
-        CheckMonsterCollisions(x);
+      $pxa('Z_07:1967', ObjMetastate, x);
+      if (!$br('Z_07:1968', ram[ObjMetastate + x] !== 0)) {
+        $pxa('Z_07:1969', ObjAttr, x);
+        if (!$br('Z_07:1971', (ram[ObjAttr + x] & 0x01) !== 0)) {
+          $pxa('Z_07:1974', ObjAttr, x);
+          if (!$br('Z_07:1976', (ram[ObjAttr + x] & 0x04) !== 0)) AnimateAndDrawObjectWalking(x);
+          x = ram[CurObjIndex];
+          CheckMonsterCollisions(x);
+        }
       }
     }
     // @NextObject
     ram[CurObjIndex]--;
-  } while (ram[CurObjIndex] !== 0);
+  } while ($br('Z_07:1986', ram[CurObjIndex] !== 0));
   ram[CurObjIndex] = 0x0b;
 
   // Only a partial heart left: heart warning.
-  if ((ram[HeartValues] & 0x0f) === 0) ram[Tune0Request] |= 0x40;
+  if (!$br('Z_07:2003', (ram[HeartValues] & 0x0f) !== 0)) ram[Tune0Request] |= 0x40;
 
-  if (ram[CurLevel] !== 0) {
+  if (!$br('Z_07:2011', ram[CurLevel] === 0)) {
     // @CheckUW
     switchBank(4);
     UpdateStatues();
@@ -200,7 +225,8 @@ export function BeginUpdateWorld() {
     CheckPowerTriforceFanfare();
   } else {
     // @CheckOW: sea sound effect in mode 5 if the room calls for it.
-    if (ram[GameMode] === 0x05) {
+    if (!$br('Z_07:2032', ram[GameMode] !== 0x05)) {
+      $pxa('Z_07:2034', LevelBlockAttrsA, ram[RoomId]);
       PlayEffect(((peek(LevelBlockAttrsA + ram[RoomId]) & 0x04) << 3) & 0xff);
     }
     // @CheckZora
@@ -208,7 +234,7 @@ export function BeginUpdateWorld() {
     CheckZora();
   }
   // @TransferStatusBarMap
-  if (ram[DynTileBufLen] === 0 && ram[StatusBarMapTrigger] !== 0) {
+  if (!$br('Z_07:2051', ram[DynTileBufLen] !== 0) && !$br('Z_07:2055', ram[StatusBarMapTrigger] === 0)) {
     ram[StatusBarMapTrigger] = 0x00;
     ram[TileBufSelector] = 0x44; // the level's status bar map
   }
@@ -236,9 +262,9 @@ export function UpdateHeartsAndRupees() {
 export function UpdatePlayer() {
   // UpdatePlayer (Z_07)
   DecrementInvincibilityTimer(0x00);
-  if ((ram[ObjState] & 0xc0) === 0x40) return; // halted (L1EDEA_Exit)
+  if ($br('Z_07:2087', (ram[ObjState] & 0xc0) === 0x40)) return; // halted (L1EDEA_Exit)
   // Paralyzed by a like-like: no input direction.
-  if (ram[LinkParalyzed] !== 0) ram[ObjInputDir] &= 0xf0;
+  if (!$br('Z_07:2095', ram[LinkParalyzed] === 0)) ram[ObjInputDir] &= 0xf0;
   switchBank(5);
   Link_HandleInput();
   Walker_Move(0x00); // Link_HandleInput leaves X = 0
@@ -248,9 +274,9 @@ export function UpdatePlayer() {
 /** Link_EndMoveAndAnimateInRoom (Z_07): not in mode $A; in UW, Link behind horizontal doors. */
 export function Link_EndMoveAndAnimateInRoom() {
   // Link_EndMoveAndAnimateInRoom (Z_07)
-  if (ram[GameMode] === 0x0a) return; // L1EDEA_Exit
+  if ($br('Z_07:2108', ram[GameMode] === 0x0a)) return; // L1EDEA_Exit
   Link_EndMoveAndAnimate();
-  if (ram[CurLevel] !== 0) ShowLinkSpritesBehindHorizontalDoors();
+  if (!$br('Z_07:2111', ram[CurLevel] === 0)) ShowLinkSpritesBehindHorizontalDoors();
   // @Exit
   return EnsureObjectAligned(0x00); // falls through with X = 0
 }

@@ -1,6 +1,7 @@
 // P19 — enemies/zol-gel (Z_04): zols (split into two gels when hurt) and gels. The gel routines were
 // advanced by the wave-4 integrator. X = object slot in every routine.
 import { ram, cpu } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import { bus } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
 import {
@@ -27,7 +28,7 @@ export function UpdateZol(x) {
   Zol_CheckCollisions(x);
   Anim_FetchObjPosForSpriteDescriptor(x);
   let y = 0x00;
-  if ((ram[FrameCounter] & 0x08) === 0) y++;
+  if (!$br('Z_04:1248', (ram[FrameCounter] & 0x08) !== 0)) y++;
   return DrawObjectMirrored(y, x);
 }
 
@@ -51,7 +52,7 @@ export function UpdateZolState0_Wander(x) {
 export function UpdateZolState1_Shove(x) {
   // UpdateZolState1_Shove (Z_04)
   Gel_MoveSplitting(x);
-  if (cpu.c) ram[ObjState + x]++;
+  if (!$br('Z_04:1270', !cpu.c)) ram[ObjState + x]++;
 }
 
 /**
@@ -64,7 +65,7 @@ export function UpdateZolState2_Split(x) {
   DestroyMonster(x);
   let r = CreateChildGel(x);
   x = r.x;
-  const a = ram[ObjDir + x] >= 0x04 ? 0x02 : 0x08;
+  const a = $br('Z_04:1287', ram[ObjDir + x] >= 0x04) ? 0x02 : 0x08;
   ram[ObjDir + r.y] = a;
   const pushed = a; // PHA
   r = CreateChildGel(x);
@@ -81,6 +82,7 @@ export function CreateChildGel(x) {
   ram[0x00] = 0x14;
   const r = ShootLimited(x);
   ram[ObjState + r.y] = 0x00;
+  $pxa('Z_04:1312', ObjGridOffset, r.x);
   ram[ObjGridOffset + r.y] = ram[ObjGridOffset + r.x];
   return { x: r.x, y: r.y };
 }
@@ -91,17 +93,19 @@ export function CreateChildGel(x) {
  */
 export function Zol_CheckCollisions(x) {
   // Zol_CheckCollisions (Z_04)
-  if (ram[ObjState + x] !== 0) return; // @Exit
+  if ($br('Z_04:1319', ram[ObjState + x] !== 0)) return; // @Exit
   Gel_CheckCollisions(x);
-  if (ram[ObjMetastate + x] !== 0) return;
-  if (ram[ObjInvincibilityTimer + x] === 0) return;
+  $pxa('Z_04:1326', ObjMetastate, x);
+  if ($br('Z_04:1327', ram[ObjMetastate + x] !== 0)) return;
+  $pxa('Z_04:1328', ObjInvincibilityTimer, x);
+  if ($br('Z_04:1329', ram[ObjInvincibilityTimer + x] === 0)) return;
   let y = 0x00;
-  if ((ram[ObjY + x] & 0x0f) === 0x0d) y = 0x03;
+  if (!$br('Z_04:1340', (ram[ObjY + x] & 0x0f) !== 0x0d)) y = 0x03;
   ram[0x00] = y;
   y = 0x00;
-  if ((ram[ObjX + x] & 0x0f) === 0) y = 0x0c;
+  if (!$br('Z_04:1350', (ram[ObjX + x] & 0x0f) !== 0)) y = 0x0c;
   // AND ObjDir: the asm reads Link's direction (slot 0), not ObjDir, X.
-  if (((y | ram[0x00]) & ram[ObjDir]) === 0) ram[ObjState + x]++;
+  if (!$br('Z_04:1371', ((y | ram[0x00]) & ram[ObjDir]) !== 0)) ram[ObjState + x]++;
   ram[ObjState + x]++;
 }
 
@@ -121,7 +125,7 @@ export function UpdateGel(x) {
   ram[ObjX + x] = saved + 0x04;
   Anim_FetchObjPosForSpriteDescriptor(x);
   let y = 0x00;
-  if ((ram[FrameCounter] & 0x02) === 0) y++;
+  if (!$br('Z_04:1401', (ram[FrameCounter] & 0x02) !== 0)) y++;
   Anim_SetSpriteDescriptorAttributes(0x03);
   DrawObjectNotMirrored(y, x);
   ram[ObjX + x] = saved; // PLA
@@ -135,7 +139,7 @@ export function UpdateGel(x) {
 export function Gel_Move(x) {
   // Gel_Move (Z_04)
   let y = ram[ObjState + x];
-  if (y === 0) {
+  if ($br('Z_04:1416', y === 0)) {
     // @State0
     ram[ObjQSpeedFrac + x] = 0x20;
     ram[ObjTimer + x] = 0x05;
@@ -143,11 +147,11 @@ export function Gel_Move(x) {
     return;
   }
   y = (y - 1) & 0xff;
-  if (y !== 0) return UpdateNormalZolOrGel(0x40, x); // @State2 falls through
+  if ($br('Z_04:1418', y !== 0)) return UpdateNormalZolOrGel(0x40, x); // @State2 falls through
   // State 1.
-  if (ram[ObjTimer + x] !== 0) {
+  if (!$br('Z_04:1424', ram[ObjTimer + x] === 0)) {
     Gel_MoveSplitting(x);
-    if (!cpu.c) return; // @Exit
+    if ($br('Z_04:1428', !cpu.c)) return; // @Exit
   }
   // @Move
   cpu.c = 0;
@@ -166,12 +170,15 @@ export function Gel_Move(x) {
 export function UpdateNormalZolOrGel(a, x) {
   // UpdateNormalZolOrGel (Z_04)
   ram[ObjQSpeedFrac + x] = a;
-  if (ram[ObjTimer + x] >= 0x05) return;
+  if ($br('Z_04:1482', ram[ObjTimer + x] >= 0x05)) return;
   ram[ObjTurnRate + x] = 0x20;
   Wanderer_TargetPlayer(x);
-  if ((ram[ObjGridOffset + x] | ram[ObjTimer + x]) !== 0) return;
+  $pxa('Z_04:1488', ObjGridOffset, x);
+  if ($br('Z_04:1490', (ram[ObjGridOffset + x] | ram[ObjTimer + x]) !== 0)) return;
   let y = ram[Random + x] & 0x03;
-  if (ram[ObjType + x] !== 0x13) y += 4;
+  $pxa('Z_04:1498', ObjType, x);
+  if (!$br('Z_04:1500', ram[ObjType + x] === 0x13)) y += 4;
+  $pxa('Z_04:1511', table(bus.rom, 'ZolGelDelays').addr, y);
   ram[ObjTimer + x] = table(bus.rom, 'ZolGelDelays').byte(y);
 }
 
@@ -183,15 +190,17 @@ export function Gel_MoveSplitting(x) {
   // Gel_MoveSplitting (Z_04)
   ram[ObjQSpeedFrac + x] = 0xff;
   ram[0x0f] = ram[ObjDir + x];
-  if (ram[ObjGridOffset + x] === 0) {
+  $pxa('Z_04:1534', ObjGridOffset, x);
+  if (!$br('Z_04:1535', ram[ObjGridOffset + x] !== 0)) {
     const t = GetCollidingTileMoving(x);
-    if (t >= ram[ObjectFirstUnwalkableTile]) return (cpu.c = 1);
+    if ($br('Z_04:1540', t >= ram[ObjectFirstUnwalkableTile])) return (cpu.c = 1);
   }
   // @CheckRoomBoundary
-  if (BoundByRoom(x) === 0) return (cpu.c = 1);
+  if ($br('Z_04:1546', BoundByRoom(x) === 0)) return (cpu.c = 1);
   MoveObject(x);
+  $pxa('Z_04:1553', ObjGridOffset, x);
   const a = ram[ObjGridOffset + x] & 0x0f;
-  if (a !== 0) return (cpu.c = 0);
+  if ($br('Z_04:1556', a !== 0)) return (cpu.c = 0);
   ram[ObjGridOffset + x] = a;
   return (cpu.c = 0);
 }

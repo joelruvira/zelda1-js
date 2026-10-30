@@ -4,6 +4,7 @@
 import { ram, cpu, peek, word } from '../../core/ram.js';
 import { bus, read } from '../../core/bus.js';
 import { table } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   RoomObjCount, CurLevel, LevelBlockAttrsByteF, ObjDir, SpawnCycle, ObjX, ObjY, GameMode, ObjType,
   RoomId, LevelBlockAttrsB, ObjCollidedTile, ObjectFirstUnwalkableTile, CurEdgeSpawnCell,
@@ -22,9 +23,10 @@ export function AssignObjSpawnPositions() {
   // AssignObjSpawnPositions (Z_05)
   let y = ram[RoomObjCount];
   let a = ram[0x02];
-  let normal = a !== 0 && a !== 0x37; // 0 or Zelda: no normal objects
-  if (normal && ram[CurLevel] === 0 && (ram[LevelBlockAttrsByteF] & 0x08)) normal = false; // from the edges
-  if (normal && ram[RoomObjCount] === 0) normal = false;
+  // 0 or Zelda: no normal objects; from the edges; no objects
+  const normal = !$br('Z_05:1885', a === 0) && !$br('Z_05:1887', a === 0x37)
+    && ($br('Z_05:1891', ram[CurLevel] !== 0) || !$br('Z_05:1894', (ram[LevelBlockAttrsByteF] & 0x08) !== 0))
+    && !$br('Z_05:1897', ram[RoomObjCount] === 0);
   if (normal) {
     // Index of Link's direction bit.
     a = ram[ObjDir];
@@ -32,38 +34,52 @@ export function AssignObjSpawnPositions() {
     do {
       y = (y + 1) & 0xff;
       a = cpu.lsr(a);
-    } while (!cpu.c);
-    ram[0x06] = table(bus.rom, 'SpawnPosListAddrsLo').byte(y);
-    ram[0x07] = table(bus.rom, 'SpawnPosListAddrsHi').byte(y);
+    } while ($br('Z_05:1905', !cpu.c));
+    const lo = table(bus.rom, 'SpawnPosListAddrsLo');
+    $pxa('Z_05:1908', lo.addr, y);
+    ram[0x06] = lo.byte(y);
+    const hi = table(bus.rom, 'SpawnPosListAddrsHi');
+    $pxa('Z_05:1910', hi.addr, y);
+    ram[0x07] = hi.byte(y);
     y = ram[SpawnCycle];
     let x = 0x01;
     do {
       // @LoopSpawnSpot
+      $pxa('Z_05:1918', word(0x06), y);
       a = read((word(0x06) + y) & 0xffff);
-      ram[ObjX + x] = (a << 4) & 0xff;
-      ram[ObjY + x] = (a & 0xf0) | 0x0d;
-      if (!IsSafeToSpawn(x)) x++;
+      ram[(ObjX + x) & 0xff] = (a << 4) & 0xff;
+      ram[(ObjY + x) & 0xff] = (a & 0xf0) | 0x0d;
+      if (!$br('Z_05:1930', !!IsSafeToSpawn(x))) x++;
       y++;
-      if (y >= 0x09) y = 0x00;
-    } while (x < 0x0a);
+      if (!$br('Z_05:1935', y < 0x09)) y = 0x00;
+    } while ($br('Z_05:1939', x < 0x0a));
     ram[SpawnCycle] = y;
   }
   // @AssignSpecialPositions
   a = ram[GameMode];
-  if (a === 0x09) {
+  if (!$br('Z_05:1946', a !== 0x09)) {
     const xs = table(bus.rom, 'CellarKeeseXs');
     const ys = table(bus.rom, 'CellarKeeseYs');
-    for (let x = 0x03; x >= 0; x--) {
+    for (let x = 0x03; ;) {
       ram[ObjType + 1 + x] = 0x1b; // blue keese
+      $pxa('Z_05:1951', xs.addr, x);
       ram[ObjX + 1 + x] = xs.byte(x);
+      $pxa('Z_05:1953', ys.addr, y);
       ram[ObjY + 1 + x] = ys.byte(y); // the original indexes the Ys with Y, not X
+      x--;
+      if (!$br('Z_05:1956', x >= 0)) break;
     }
     return;
   }
   // @CheckCaves
-  if (a !== 0x0b && a !== 0x0c) return;
-  for (let x = 0x07; x >= 0; x--) ram[ObjType + 1 + x] = 0x00;
+  if (!$br('Z_05:1962', a === 0x0b) && $br('Z_05:1964', a !== 0x0c)) return;
+  for (let x = 0x07; ;) {
+    ram[ObjType + 1 + x] = 0x00;
+    x--;
+    if (!$br('Z_05:1974', x >= 0)) break;
+  }
   // cave dweller type = $6A + ((cave attribute) - $40) / 4
+  $pxa('Z_05:1978', LevelBlockAttrsB, ram[RoomId]);
   a = peek(LevelBlockAttrsB + ram[RoomId]) & 0xfc;
   a = ((a - 0x40) & 0xff) >> 2;
   ram[ObjType + 1] = (a + 0x6a) & 0xff;
@@ -73,15 +89,16 @@ export function AssignObjSpawnPositions() {
 export function IsSafeToSpawn(x) {
   // IsSafeToSpawn (Z_05): the caller's Y is saved and restored around GetCollidableTileStill
   GetCollidableTileStill(x);
-  if (ram[ObjCollidedTile + x] >= ram[ObjectFirstUnwalkableTile]) return ReturnUnsafeToSpawn();
+  $pxa('Z_05:2005', ObjCollidedTile, x);
+  if ($br('Z_05:2007', ram[ObjCollidedTile + x] >= ram[ObjectFirstUnwalkableTile])) return ReturnUnsafeToSpawn();
   return IsDistanceSafeToSpawn(x); // falls through
 }
 
 /** IsDistanceSafeToSpawn (Z_05). X = object. @returns C: 1 if closer than $22 to Link on both axes */
 export function IsDistanceSafeToSpawn(x) {
   // IsDistanceSafeToSpawn (Z_05)
-  if (Abs((ram[ObjX] - ram[ObjX + x]) & 0xff) < 0x22
-    && Abs((ram[ObjY] - ram[ObjY + x]) & 0xff) < 0x22) return ReturnUnsafeToSpawn();
+  if (!$br('Z_05:2022', Abs((ram[ObjX] - ram[(ObjX + x) & 0xff]) & 0xff) >= 0x22)
+    && $br('Z_05:2030', Abs((ram[ObjY] - ram[(ObjY + x) & 0xff]) & 0xff) < 0x22)) return ReturnUnsafeToSpawn();
   cpu.c = 0; // walkable
   return 0;
 }
@@ -105,24 +122,31 @@ export function FindNextEdgeSpawnCell() {
     // @LoopEdgeCell
     let y = 0x10;
     let a = ram[0x0a] & 0x0f;
-    let leftOrRight = a === 0;
+    let leftOrRight = $br('Z_05:3424', a === 0);
     if (!leftOrRight) {
       y = 0xf0;
-      leftOrRight = a === 0x0f;
+      leftOrRight = !$br('Z_05:3430', a !== 0x0f);
     }
     if (leftOrRight) ram[0x0a] = (y + ram[0x0a]) & 0xff; // @HandleLeftOrRight
     // @CheckTopOrBottom
     a = ram[0x0a] & 0xf0;
-    if (a === 0xe0) ram[0x0a]++;
-    else if (a === 0x40) ram[0x0a]--;
+    if (!$br('Z_05:3446', a !== 0xe0)) ram[0x0a]++;
+    else if (!$br('Z_05:3453', a !== 0x40)) ram[0x0a]--;
     // @PointToColumn
     FetchTileMapAddr();
-    for (y = ram[0x0a] & 0x0f; y !== 0; y--) AddToInt16At0(0x2c);
+    y = ram[0x0a] & 0x0f;
+    if (!$br('Z_05:3469', y === 0)) {
+      do {
+        AddToInt16At0(0x2c);
+        y--;
+      } while ($br('Z_05:3474', y !== 0));
+    }
     // @GetRowOffset
     y = ((ram[0x0a] & 0xf0) - 0x40) & 0xff;
     y >>= 3;
-    if (peek(word(0x00) + y) < 0x84) break;
-    if (ram[0x0a] === ram[CurEdgeSpawnCell]) break;
+    $pxa('Z_05:3491', word(0x00), y);
+    if ($br('Z_05:3493', read((word(0x00) + y) & 0xffff) < 0x84)) break; // LDA ($00),Y through the bus
+    if (!$br('Z_05:3499', ram[0x0a] !== ram[CurEdgeSpawnCell])) break;
   }
   // @SetSpawnCell
   ram[CurEdgeSpawnCell] = ram[0x0a];

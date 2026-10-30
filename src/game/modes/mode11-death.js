@@ -28,6 +28,7 @@ import { UpdateTriforcePositionMarker, DrawStatusBarItemsAndEnsureItemSelected }
 import { FormatStatusBarText } from '../text/format.js';
 import { GetUniqueRoomId } from '../world/roomflags.js';
 import { CopyNextRowToTransferBufAndAdvanceSubmodeWhenDone } from '../world/tilemap.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 // ------------------------------------------------------------------ init
 
@@ -36,7 +37,7 @@ export function InitMode11() {
   // InitMode11 (Z_05)
   DecrementInvincibilityTimer(0x00); // needed in submode 1
   Link_EndMoveAndAnimate();
-  if (ram[GameSubmode] !== 0) return InitMode11_Sub1();
+  if ($br('Z_05:2044', ram[GameSubmode] !== 0)) return InitMode11_Sub1();
   // Submode 0.
   HideAllSprites();
   UpdateTriforcePositionMarker();
@@ -54,8 +55,8 @@ export function InitMode11() {
 /** InitMode11_Sub1 (Z_05, internal label of InitMode11): falls into SilenceSound. */
 function InitMode11_Sub1() {
   // InitMode11_Sub1 (Z_05)
-  if (ram[ObjTimer] !== 0) return; // L14A96_Exit
-  if ((GetUniqueRoomId() & 0x3e) !== 0x3e) {
+  if ($br('Z_05:2069', ram[ObjTimer] !== 0)) return; // L14A96_Exit
+  if (!$br('Z_05:2073', (GetUniqueRoomId() & 0x3e) === 0x3e)) {
     // Not in a cellar: lay out the doors again (seems redundant).
     ram[PrevOpenedDoors] = ram[CurOpenedDoors];
     LayOutDoorsPrev();
@@ -127,7 +128,7 @@ export function CueTransferPlayAreaAttrsHalfAndAdvanceSubmode(a, x, y) {
 /** UpdateMode11Death_Sub2 (Z_05): all play area tile rows, written to nametable 2. */
 export function UpdateMode11Death_Sub2() {
   // UpdateMode11Death_Sub2 (Z_05)
-  if (CopyNextRowToTransferBufAndAdvanceSubmodeWhenDone()) WriteAndEnableSprite0();
+  if (!$br('Z_05:2573', !CopyNextRowToTransferBufAndAdvanceSubmodeWhenDone())) WriteAndEnableSprite0();
   ram[DynTileBuf] = (ram[DynTileBuf] + 0x08) & 0xff; // $20xx -> $28xx
 }
 
@@ -167,20 +168,21 @@ export function UpdateMode11Death_Sub6() {
 /** UpdateMode11Death_Sub7 (Z_05): Link turns counter-clockwise every 5 frames, 4 times. */
 export function UpdateMode11Death_Sub7() {
   // UpdateMode11Death_Sub7 (Z_05)
-  if (ram[DeathModeCounter] === 0) {
+  if ($br('Z_05:2609', ram[DeathModeCounter] === 0)) {
     ram[GameSubmode]++; // L14CD7_IncSubmode
     return;
   }
-  if (ram[ObjTimer + 11] === 0) {
+  if (!$br('Z_05:2611', ram[ObjTimer + 11] !== 0)) {
     ram[ObjTimer + 11] = 0x05;
     const dir = ram[ObjDir];
     let a = dir >> 2; // LSR / LSR
-    if (dir & 0x02) {
+    if (!$br('Z_05:2617', (dir & 0x02) === 0)) {
       // Facing left.
       ram[DeathModeCounter]--;
       a = 0x04; // down
-    } else if (a === 0) {
+    } else if (!$br('Z_05:2633', a !== 0)) {
       a = 0x08; // facing right: up
+      $br('Z_05:2639', true);
     } // else vertical: A is the horizontal direction counter-clockwise from it
     ram[ObjDir] = a; // @SetLinkDirAndDraw
   }
@@ -190,7 +192,7 @@ export function UpdateMode11Death_Sub7() {
 /** UpdateMode11Death_Sub8_AnimateFade (Z_05): AnimateWorldFading; when done, INC GameSubmode. */
 export function UpdateMode11Death_Sub8_AnimateFade() {
   // UpdateMode11Death_Sub8_AnimateFade (Z_05)
-  if (AnimateWorldFading() !== 0) return;
+  if (!$br('Z_05:2643', AnimateWorldFading() === 0)) return;
   // L14CD7_IncSubmode
   ram[GameSubmode] = (ram[GameSubmode] + 1) & 0xff;
 }
@@ -200,14 +202,15 @@ export function UpdateMode11Death_Sub9() {
   // UpdateMode11Death_Sub9 (Z_05)
   ram[TileBufSelector] = 0x2c;
   ram[DeathModeCounter] = 0x0f;
+  $br('Z_05:2655', true); // LDA #$18 / BNE
   return UpdateMode11Death_SetTimerIncSubmode(0x18); // delay $17 frames
 }
 
 /** UpdateMode11Death_SubA (Z_05): the spark where Link was, then "heart taken" tune. */
 export function UpdateMode11Death_SubA() {
   // UpdateMode11Death_SubA (Z_05)
-  if (ram[ObjTimer + 11] !== 0) return; // L14D55_Exit
-  const x = ram[DeathModeCounter] >= 0x06 ? 0x62 : 0x64; // little / big spark
+  if ($br('Z_05:2659', ram[ObjTimer + 11] !== 0)) return; // L14D55_Exit
+  const x = $br('Z_05:2663', ram[DeathModeCounter] >= 0x06) ? 0x62 : 0x64; // little / big spark
   let a = ram[ObjY];
   ram[Sprites + 72] = a;
   ram[Sprites + 76] = a;
@@ -219,7 +222,7 @@ export function UpdateMode11Death_SubA() {
   ram[Sprites + 75] = a;
   ram[Sprites + 79] = (a + 0x08) & 0xff;
   ram[DeathModeCounter]--;
-  if (ram[DeathModeCounter] !== 0) return; // L14D55_Exit
+  if ($br('Z_05:2681', ram[DeathModeCounter] !== 0)) return; // L14D55_Exit
   ram[Tune0Request] = 0x10;
   ram[Sprites + 72] = 0xf8; // hide the spark
   ram[Sprites + 76] = 0xf8;
@@ -235,7 +238,7 @@ function UpdateMode11Death_SetTimerIncSubmode(a) {
 /** UpdateMode11Death_SubB (Z_05): "GAME OVER" ($46) after the delay; then wait $5F frames. */
 export function UpdateMode11Death_SubB() {
   // UpdateMode11Death_SubB (Z_05)
-  if (ram[ObjTimer + 11] !== 0) return; // L14D55_Exit
+  if ($br('Z_05:2698', ram[ObjTimer + 11] !== 0)) return; // L14D55_Exit
   ram[ObjTimer + 11] = 0x60;
   return SelectTransferBufAndAdvanceSubmode(0x46);
 }
@@ -243,11 +246,12 @@ export function UpdateMode11Death_SubB() {
 /** UpdateMode11Death_SubC (Z_05): go to mode 8 with the game over music; one more death. */
 export function UpdateMode11Death_SubC() {
   // UpdateMode11Death_SubC (Z_05)
-  if (ram[ObjTimer + 11] !== 0) return;
+  if ($br('Z_05:2706', ram[ObjTimer + 11] !== 0)) return;
   EndGameMode();
   ram[GameMode] = 0x08;
   ram[Tune1Request] = 0x40;
   const x = ram[CurSaveSlot];
-  if (ram[DeathCounts + x] === 0xff) return; // up to $FF
+  $pxa('Z_05:2713', DeathCounts, x);
+  if ($br('Z_05:2715', ram[DeathCounts + x] === 0xff)) return; // up to $FF
   ram[DeathCounts + x]++;
 }

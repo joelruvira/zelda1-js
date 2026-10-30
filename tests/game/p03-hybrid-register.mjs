@@ -7,6 +7,10 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+// The stubs run original 6502 code with no cycle breadcrumbs: the cycle tracker cannot follow those
+// NMIs, so this RAM/SRAM isolation run uses the zero-time model (docs/TIMING.md).
+process.env.ZELDA_TIMING ??= 'off';
+
 const HYBRID = new URL('./p01-hybrid.mjs', import.meta.url).href;
 const DEFAULT = 'modes/mode0-title.js,modes/mode1-fileselect.js,modes/modeE-register.js,modes/modeF-eliminate.js,modes/modeD-save.js';
 const STUBBED = (process.env.P03_STUB ?? DEFAULT).split(',').filter(Boolean);

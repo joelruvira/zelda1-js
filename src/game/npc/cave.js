@@ -26,6 +26,7 @@ import {
 import {
   UpdateCavePersonState_TransferPrices, UpdateCavePersonState_HintOrMoneyGame, PostDebit,
 } from './shop.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitCave (Z_01): X = object slot (1). Sets up the person, the bonfires and the wares. */
 export function InitCave(x) {
@@ -33,9 +34,9 @@ export function InitCave(x) {
   SetUpCommonCaveObjects(0x78, x, 0x80);
   const t = ram[ObjType + 1];
   // Caves that remember their state (give item, door charge): taken -> no person, no text.
-  if (t === 0x72 || t === 0x71 || t >= 0x7b || t < 0x6e) {
+  if ($br('Z_01:84', t === 0x72) || $br('Z_01:86', t === 0x71) || $br('Z_01:88', t >= 0x7b) || !$br('Z_01:90', t >= 0x6e)) {
     // @TakeType
-    if (GetRoomFlagUWItemState() !== 0) {
+    if (!$br('Z_01:99', GetRoomFlagUWItemState() === 0)) {
       ram[ObjType + 1] = 0x00;
       return UnhaltLink(); // falls through
     }
@@ -54,6 +55,7 @@ export function UnhaltLink() {
 function InitCaveContinue() {
   // InitCaveContinue (Z_01)
   let y = (ram[ObjType + 1] - 0x6a) & 0xff; // cave index
+  $pxa('Z_01:119', label('OverworldPersonTextSelectors').addr, y);
   let a = table(bus.rom, 'OverworldPersonTextSelectors').byte(y);
   ram[PersonTextSelector] = a & 0x3f;
   ram[0x03] = a & 0xc0; // "pay" and "pick up" flags
@@ -62,44 +64,55 @@ function InitCaveContinue() {
   do {
     a = (a + 0x03) & 0xff;
     y = (y - 1) & 0xff;
-  } while (!(y & 0x80));
+  } while ($br('Z_01:137', !(y & 0x80)));
   y = a;
-  for (let x = 0x00; x !== 0x03; x++) {
+  for (let x = 0x00; ;) {
     // @CopyCaveBytes
+    $pxa('Z_01:146', LevelBlockAttrsE, y);
     a = peek(LevelBlockAttrsE + y);
     ram[CaveItemIds + x] = a;
-    ram[0x00 + x] = a & 0xc0;
+    ram[(0x00 + x) & 0xff] = a & 0xc0;
+    $pxa('Z_01:154', LevelBlockAttrsE + 60, y);
     ram[CavePrices + x] = peek(LevelBlockAttrsE + 60 + y);
     y = (y + 1) & 0xff;
+    x++;
+    if (!$br('Z_01:161', x !== 0x03)) break;
   }
   // ASL / ROL / ROL: top 2 bits to the bottom.
   ram[0x00] = (ram[0x03] >> 6) | ram[0x00];
   ram[0x00] = (ram[0x02] >> 4) | ram[0x00];
   a = (ram[0x01] >> 2) | ram[0x00];
   ram[CaveFlags] = a;
-  if (a & 0x20) {
+  if (!$br('Z_01:195', (a & 0x20) === 0)) {
     // Money game: choose a permutation index 6..1 with increasing probability.
     a = 0xff;
     y = 0x06;
     do {
-      if (a < ram[Random + 1]) break; // BCC @FoundPermutation
+      if ($br('Z_01:206', a < ram[Random + 1])) break; // BCC @FoundPermutation
       a = (a - 0x2b) & 0xff;
       y--;
-    } while (y !== 0);
+    } while ($br('Z_01:212', y !== 0));
     // @FoundPermutation
+    $pxa('Z_01:216', label('MoneyGamePermutationEndIndexes').addr, y);
     let x = table(bus.rom, 'MoneyGamePermutationEndIndexes').byte(y);
     const perms = table(bus.rom, 'MoneyGamePermutations');
-    for (y = 0x02; y >= 0; y--) {
+    for (y = 0x02; ; y--) {
+      $pxa('Z_01:222', perms.addr, x);
       ram[0x046c + y] = perms.byte(x);
       x = (x - 1) & 0xff;
+      if (!$br('Z_01:226', y - 1 >= 0)) break;
     }
+    $pxa('Z_01:233', label('MoneyGameLossAmounts').addr, ram[Random + 2] & 0x01);
     ram[0x046f] = table(bus.rom, 'MoneyGameLossAmounts').byte(ram[Random + 2] & 0x01);
     ram[0x0470] = 0x0a;
-    ram[0x0471] = ram[Random + 2] & 0x02 ? 0x32 : 0x14;
-    for (x = 0x02; x >= 0; x--) {
+    ram[0x0471] = !$br('Z_01:245', (ram[Random + 2] & 0x02) === 0) ? 0x32 : 0x14;
+    for (x = 0x02; ; x--) {
       // @ArrangeAmounts
+      $pxa('Z_01:256', 0x046c, x);
       y = ram[0x046c + x];
+      $pxa('Z_01:257', 0x046f, y);
       ram[MoneyGameAmounts + x] = ram[0x046f + y];
+      if (!$br('Z_01:260', x - 1 >= 0)) break;
     }
   }
   // @ResetTextbox
@@ -129,13 +142,13 @@ let caveHandlers;
 export function UpdateCavePerson(x) {
   // UpdateCavePerson (Z_01)
   // In state 4, every other frame skip drawing the person and the items.
-  if (!(ram[ObjState + 1] === 0x04 && (ram[FrameCounter] & 0x01) !== 0)) {
+  if (!(!$br('Z_01:312', ram[ObjState + 1] !== 0x04) && $br('Z_01:315', (ram[FrameCounter] & 0x01) !== 0))) {
     DrawCavePerson(x);
     // Medicine shop ($74) before the letter is used: B with the letter selected uses it.
-    if (ram[ObjType + 1] === 0x74 && ram[InvLetter] !== 0x02) {
-      if (ram[SelectedItemSlot] !== 0x0f || (ram[ButtonsPressed] & 0x40) === 0) {
+    if (!$br('Z_01:324', ram[ObjType + 1] !== 0x74) && !$br('Z_01:327', ram[InvLetter] === 0x02)) {
+      if ($br('Z_01:332', ram[SelectedItemSlot] !== 0x0f) || !$br('Z_01:335', (ram[ButtonsPressed] & 0x40) !== 0)) {
         // @Unhalt
-        if (ram[ObjState] === 0x40) UnhaltLink();
+        if (!$br('Z_01:341', ram[ObjState] !== 0x40)) UnhaltLink();
         return;
       }
       // @UseLetter
@@ -161,29 +174,31 @@ export function UpdateCavePerson(x) {
 export function DrawCavePerson(x) {
   // DrawCavePerson (Z_01)
   const a = Anim_FetchObjPosForSpriteDescriptor(x);
-  if (ram[ObjType + 1] < 0x7b) return DrawObjectMirrored(a, x);
+  if (!$br('Z_01:385', ram[ObjType + 1] >= 0x7b)) return DrawObjectMirrored(a, x);
   return DrawObjectNotMirrored(a, x);
 }
 
 /** DrawCaveItems (Z_01): the wares (room item slot $13) and the rupee before the prices. */
 export function DrawCaveItems() {
   // DrawCaveItems (Z_01)
-  if (ram[CaveFlags] & 0x04) {
+  if (!$br('Z_01:400', (ram[CaveFlags] & 0x04) === 0)) {
     // Show items: loop over the wares 2..0, indexed by [0421].
     ram[NameCharOffset] = 0x02;
     const xs = table(bus.rom, 'CaveWareXs');
     do {
       const x = ram[NameCharOffset];
+      $pxa('Z_01:410', xs.addr, x);
       ram[ObjX + 19] = xs.byte(x);
       ram[ObjY + 19] = 0x98;
+      $pxa('Z_01:418', CaveItemIds, x);
       const a = ram[CaveItemIds + x] & 0x3f;
-      if (a !== 0x3f) AnimateItemObject(a, 0x13);
+      if (!$br('Z_01:421', a === 0x3f)) AnimateItemObject(a, 0x13);
       // @NextWare
       ram[NameCharOffset]--;
-    } while (!(ram[NameCharOffset] & 0x80));
+    } while ($br('Z_01:430', !(ram[NameCharOffset] & 0x80)));
   }
   // @ShowPriceRupee
-  if ((ram[CaveFlags] & 0x08) === 0) return;
+  if ($br('Z_01:436', (ram[CaveFlags] & 0x08) === 0)) return;
   ram[ObjX + 19] = 0x30;
   ram[ObjY + 19] = 0xab;
   AnimateItemObject(0x18, 0x13);
@@ -192,32 +207,39 @@ export function DrawCaveItems() {
 /** UpdateCavePersonState_TalkOrShopOrDoorCharge (Z_01): state 2. Talk, door charge, or wait for a pick. */
 export function UpdateCavePersonState_TalkOrShopOrDoorCharge() {
   // UpdateCavePersonState_TalkOrShopOrDoorCharge (Z_01)
-  if ((ram[CaveFlags] & 0x01) === 0) {
+  if (!$br('Z_01:683', (ram[CaveFlags] & 0x01) !== 0)) {
     // Not a "choose/pick up" cave: stay in state 8 showing the person.
     ram[ObjState + 1] = 0x08;
-    if (ram[ObjType + 1] !== 0x71) return;
+    if ($br('Z_01:693', ram[ObjType + 1] !== 0x71)) return;
     // Door charge: 20 rupees.
     ram[RupeesToSubtract] = ram[RupeesToSubtract] + 0x14;
     return SetRoomFlagUWItemState();
   }
   // @CheckPickUp
-  if (ram[RupeesToSubtract] !== 0) return;
+  if ($br('Z_01:716', ram[RupeesToSubtract] !== 0)) return;
   const xs = table(bus.rom, 'CaveWareXs');
   let x;
-  for (x = 0x02; x >= 0; x--) {
+  for (x = 0x02; ; x--) {
     // @LoopWare
-    if ((ram[CaveItemIds + x] & 0x3f) === 0x3f) continue;
-    if (ram[ObjX] !== xs.byte(x)) continue;
-    if (Abs((ram[ObjY] - 0x98) & 0xff) < 0x06) break;
+    $pxa('Z_01:723', CaveItemIds, x);
+    if (!$br('Z_01:726', (ram[CaveItemIds + x] & 0x3f) === 0x3f)) {
+      $pxa('Z_01:730', xs.addr, x);
+      if (!$br('Z_01:731', ram[ObjX] !== xs.byte(x))) {
+        if ($br('Z_01:740', Abs((ram[ObjY] - 0x98) & 0xff) < 0x06)) break;
+      }
+    }
+    // @NextWare
+    if (!$br('Z_01:745', x - 1 >= 0)) return;
   }
-  if (x < 0) return;
   // @PickedUp
   ram[CaveChosenIndex] = x;
   let a = ram[CaveFlags] & 0x30;
-  if (a !== 0) {
-    if (a & 0x10) {
+  if (!$br('Z_01:756', a === 0)) {
+    if (!$br('Z_01:760', (a & 0x10) === 0)) {
       // Hint: pay the price first.
-      if (ram[InvRupees] < ram[CavePrices + x]) return; // Exit
+      $pxa('Z_01:766', CavePrices, x);
+      if ($br('Z_01:767', ram[InvRupees] < ram[CavePrices + x])) return; // Exit
+      $pxa('Z_01:770', CavePrices, x);
       PostDebit(ram[CavePrices + x]);
     }
     // @MadeWager
@@ -225,18 +247,21 @@ export function UpdateCavePersonState_TalkOrShopOrDoorCharge() {
     return;
   }
   // @PickedUpWare
-  if (ram[CaveFlags] & 0x02) {
-    if (ram[InvRupees] < ram[CavePrices + x]) return; // Exit
+  if (!$br('Z_01:785', (ram[CaveFlags] & 0x02) === 0)) {
+    $pxa('Z_01:789', CavePrices, x);
+    if ($br('Z_01:790', ram[InvRupees] < ram[CavePrices + x])) return; // Exit
+    $pxa('Z_01:793', CavePrices, x);
     PostDebit(ram[CavePrices + x]);
   }
   // @TryToTake
-  if (ram[CaveFlags] & 0x40) {
+  if (!$br('Z_01:801', (ram[CaveFlags] & 0x40) === 0)) {
     // Heart container requirement: 5 for the white sword ($6C), else $C.
-    const y = ram[ObjType + 1] === 0x6c ? 0x40 : 0xb0;
-    if (y > ram[HeartValues]) return; // unverified code 490E
+    const y = $br('Z_01:810', ram[ObjType + 1] === 0x6c) ? 0x40 : 0xb0;
+    if (!$br('Z_01:817', y === ram[HeartValues]) && !$br('Z_01:818', y < ram[HeartValues])) return; // unverified code 490E
   }
   // @Take
   SetRoomFlagUWItemState();
+  $pxa('Z_01:825', CaveItemIds, x);
   a = ram[CaveItemIds + x] & 0x3f; // PHA
   ram[CaveItemIds + x] = 0xff; // taken
   TakeItem(a);
@@ -255,7 +280,7 @@ export function ClearPricesCaveFlag() {
 export function UpdatePersonState_DelayThenHide() {
   // UpdatePersonState_DelayThenHide (Z_01)
   const a = ram[ObjTimer + 1];
-  if (a !== 0) return; // L493A_Exit
+  if ($br('Z_01:852', a !== 0)) return; // L493A_Exit
   ram[ObjType + 1] = a;
 }
 
@@ -271,6 +296,7 @@ export function UpdateStandingFire(x) {
   Anim_SetSpriteDescriptorAttributes(0x02); // normal sprites, palette row 6 (red)
   ram[ObjDir + x] = 0x08; // up
   AnimateObjectWalking(x);
-  if (ram[ObjType + x] !== 0x40) ram[0x0f] = 0x00; // unverified code 10065
+  $pxa('Z_04:273', ObjType, x);
+  if (!$br('Z_04:275', ram[ObjType + x] === 0x40)) ram[0x0f] = 0x00; // unverified code 10065
   return DrawObjectNotMirrored(0x00, x); // frame image 0
 }

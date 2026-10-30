@@ -24,6 +24,7 @@ import {
   AnimateDemoPhase1Subphase0, AnimateDemoPhase1Subphase1, AnimateDemoPhase1Subphase2,
   AnimateDemoPhase1Subphase3, AnimateDemoPhase1Subphase4,
 } from './mode0-story.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 const rom = () => bus.rom;
 
@@ -35,7 +36,7 @@ let initPhase1Handlers;
 export function InitDemo_RunTasks() {
   // InitDemo_RunTasks (Z_02)
   TurnOffAllVideo();
-  if (ram[DemoPhase] !== 0) return InitDemo_Phase1(); // BNE InitDemo_Phase1
+  if ($br('Z_02:183', ram[DemoPhase] !== 0)) return InitDemo_Phase1(); // BNE InitDemo_Phase1
   initPhase0Handlers ??= [InitDemoSubphaseClearArtifacts, InitDemoSubphaseTransferTitlePalette,
     InitDemoSubphasePlayTitleSong];
   return tableJump(label('InitDemo_RunTasks_Phase0_JumpTable').addr, ram[DemoSubphase], initPhase0Handlers);
@@ -65,16 +66,17 @@ export function InitDemoSubphaseTransferTitlePalette() {
   ram[0x0300] = x; // STX $0300
   ram[DynTileBufLen] = x;
   const rec = table(rom(), 'TitlePaletteTransferRecord');
-  for (; x >= 0; x--) ram[DynTileBuf + x] = rec.byte(x);
+  for (;;) { $pxa('Z_02:462', rec.addr, x); ram[DynTileBuf + x] = rec.byte(x); x--; if (!$br('Z_02:465', x >= 0)) break; }
   // Reset variables used in this phase.
   ram[DemoLineTextIndex] = 0;
   ram[DemoItemRow] = 0;
-  for (x = 0x0a; x >= 0; x--) {
+  for (x = 0x0a; ;) {
     ram[TriforceGlowTimer + x] = 0;
     ram[InitializedWaterfallAnimation + x] = 0;
     ram[DemoPhase0Subphase1Cycle + x] = 0;
+    x--; if (!$br('Z_02:476', x >= 0)) break;
   }
-  for (x = 0x0a; x !== 0; x--) ram[ObjState + x] = 0xff; // mark objects 1 to 10 disabled
+  for (x = 0x0a; ;) { ram[ObjState + x] = 0xff; x--; if (!$br('Z_02:483', x !== 0)) break; } // mark objects 1 to 10 disabled
   return IncSubphase(); // JMP IncSubphase
 }
 
@@ -91,13 +93,14 @@ export function InitDemoSubphaseTransferStoryPalette() {
   ram[0x0300] = x; // STX $0300
   ram[DynTileBufLen] = x;
   const rec = table(rom(), 'StoryPaletteTransferRecord');
-  for (; x >= 0; x--) ram[DynTileBuf + x] = rec.byte(x);
+  for (;;) { $pxa('Z_02:508', rec.addr, x); ram[DynTileBuf + x] = rec.byte(x); x--; if (!$br('Z_02:511', x >= 0)) break; }
   // Reset variables used in this phase ($0412, $041F, $0437, $0444 + 0..$0A).
-  for (x = 0x0a; x >= 0; x--) {
+  for (x = 0x0a; ;) {
     ram[TriforceGlowTimer + x] = 0; // $0412
     ram[InitializedWaterfallAnimation + x] = 0; // $041F
     ram[DemoPhase0Subphase1Cycle + x] = 0; // $0437
     ram[DemoItemIds + x] = 0; // $0444
+    x--; if (!$br('Z_02:521', x >= 0)) break;
   }
   return IncSubphase(); // JMP IncSubphase
 }
@@ -124,9 +127,9 @@ let updateHandlers;
 
 export function UpdateMode0Demo() {
   // UpdateMode0Demo (Z_02): only animate if submode = 0 and SkippedDemo = 0.
-  if (ram[GameSubmode] === 0 && ram[SkippedDemo] === 0) {
+  if (!$br('Z_02:203', ram[GameSubmode] !== 0) && !$br('Z_02:205', ram[SkippedDemo] !== 0)) {
     AnimateDemo();
-    if (ram[IsUpdatingMode] === 0) return; // BEQ Exit
+    if ($br('Z_02:208', ram[IsUpdatingMode] === 0)) return; // BEQ Exit
   }
   // @HandleSubmodes
   updateHandlers ??= [UpdateMode0Demo_Sub0, UpdateMode0Demo_Sub1, UpdateMode0Demo_Sub2];
@@ -136,7 +139,7 @@ export function UpdateMode0Demo() {
 export function UpdateMode0Demo_Sub0() {
   // UpdateMode0Demo_Sub0 (Z_02)
   const a = ram[ButtonsPressed] & 0x10;
-  if (a === 0) return; // Start not pressed: Exit
+  if ($br('Z_02:222', a === 0)) return; // Start not pressed: Exit
   ram[TransferredDemoPatterns] = a; // $10: convenient and not $A5
   ram[SongRequest] = 0;
   SilenceAllSound();
@@ -154,11 +157,12 @@ export function UpdateMode0Demo_Sub2() {
   ram[CurSaveSlot] = 0;
   FetchFileAAddressSet();
   let y = 0x02;
-  do {
+  for (;;) {
     // @LoopFormatSlot
+    $pxa('Z_02:249', word(0x06), y);
     const a = read((word(0x06) + y) & 0xffff);
     ram[IsSaveSlotActive + y] = a;
-    if (a === 0) {
+    if (!$br('Z_02:251', a !== 0)) {
       const saved = y; // TYA / PHA
       ram[CurSaveSlot] = y;
       FetchFileAAddressSet();
@@ -169,17 +173,21 @@ export function UpdateMode0Demo_Sub2() {
       y = saved; // PLA / TAY
     }
     // @NextFormatSlot
+    $pxa('Z_02:271', word(0x0a), y);
     ram[DeathCounts + y] = read((word(0x0a) + y) & 0xffff);
+    $pxa('Z_02:273', word(0x0c), y);
     ram[QuestNumbers + y] = read((word(0x0c) + y) & 0xffff);
     y = (y - 1) & 0xff;
-  } while (!(y & 0x80));
+    if (!$br('Z_02:276', !(y & 0x80))) break;
+  }
 
   y = 0x18; // hearts value in the Items block
   let x = 0; // even: hearts value; odd: heart partial
   for (;;) {
     // @LoopHeart
+    $pxa('Z_02:281', word(0x00), y);
     let a = read((word(0x00) + y) & 0xffff);
-    if ((x & 1) === 0) {
+    if (!$br('Z_02:288', (x & 1) !== 0)) {
       // Hearts value: make the hearts equal the heart containers.
       a &= 0xf0;
       ram[0x0c] = a;
@@ -189,13 +197,18 @@ export function UpdateMode0Demo_Sub2() {
     ram[SaveSlotHearts + x] = a;
     y = (y + 1) & 0xff;
     x++;
-    if (x === 0x06) break; // @CopyNames
-    if (x & 1) continue; // odd: go process the heart partial
+    if ($br('Z_02:314', x === 0x06)) break; // @CopyNames
+    if ($br('Z_02:317', (x & 1) !== 0)) continue; // odd: go process the heart partial
     y = (y + 0x26) & 0xff; // C = 0 (LSR of an even X): the next slot's hearts value
   }
 
   // @CopyNames
-  for (y = 0x17; y >= 0; y--) ram[Names + y] = read((word(0x04) + y) & 0xffff);
+  for (y = 0x17; ;) {
+    $pxa('Z_02:330', word(0x04), y);
+    ram[Names + y] = read((word(0x04) + y) & 0xffff);
+    y = (y - 1) & 0xff;
+    if (!$br('Z_02:333', y < 0x80)) break;
+  }
   ram[GameMode]++; // go to the next game mode (menu)
   ram[IsUpdatingMode] = 0;
   ram[GameSubmode] = 0;
@@ -208,7 +221,7 @@ let animPhase1Handlers;
 
 export function AnimateDemo() {
   // AnimateDemo (Z_02)
-  if (ram[DemoPhase] !== 0) return AnimateDemo_Phase1();
+  if ($br('Z_02:342', ram[DemoPhase] !== 0)) return AnimateDemo_Phase1();
   animPhase0Handlers ??= [AnimateDemoPhase0Subphase0, AnimateDemoPhase0Subphase1];
   return tableJump(label('AnimateDemo_Phase0_JumpTable').addr, ram[DemoSubphase], animPhase0Handlers);
 }
@@ -222,9 +235,9 @@ export function AnimateDemo_Phase1() {
 
 export function AnimateDemoPhase0Subphase0() {
   // AnimateDemoPhase0Subphase0 (Z_02): animate while waiting about 512 frames.
-  if (ram[FrameCounter] & 0x01) { // the timer is incremented every other frame
+  if (!$br('Z_02:544', (ram[FrameCounter] & 0x01) === 0)) { // the timer is incremented every other frame
     ram[DemoTimer]++;
-    if (ram[DemoTimer] === 0) return IncSubphase();
+    if (!$br('Z_02:547', ram[DemoTimer] !== 0)) return IncSubphase();
   }
   // @SkipTimer
   AnimateDemoPhase0Subphase0Artifacts();
@@ -234,18 +247,19 @@ export function AnimateDemoPhase0Subphase0Artifacts() {
   // AnimateDemoPhase0Subphase0Artifacts (Z_02)
   // Copy the initial title sprites to the Sprites area.
   const spr = table(rom(), 'InitialTitleSprites');
-  for (let y = 0x70; y !== 0; y--) ram[Sprites - 1 + y] = spr.byte(y - 1);
+  for (let y = 0x70; ;) { $pxa('Z_02:1015', spr.addr - 1, y); ram[Sprites - 1 + y] = spr.byte(y - 1); y--; if (!$br('Z_02:1018', y !== 0)) break; }
   UpdateWaterfallAnimation();
 
   // At the end of the glow cycle, append a transfer record for the triforce palette.
-  if (ram[TriforceGlowTimer] === 0) {
+  if (!$br('Z_02:1024', ram[TriforceGlowTimer] !== 0)) {
     const rec = table(rom(), 'TriforcePaletteTransferRecord');
-    for (let y = 0x07; y >= 0; y--) ram[DynTileBuf + y] = rec.byte(y);
+    for (let y = 0x07; ;) { $pxa('Z_02:1028', rec.addr, y); ram[DynTileBuf + y] = rec.byte(y); y--; if (!$br('Z_02:1031', y >= 0)) break; }
+    $pxa('Z_02:1036', table(rom(), 'TriforceGlowingColors').addr, ram[TriforceGlowCycle]);
     // Patch the record with the color for the current point in the cycle.
     ram[DynTileBuf + 5] = table(rom(), 'TriforceGlowingColors').byte(ram[TriforceGlowCycle]);
     ram[TriforceGlowTimer] = 0x06;
     ram[TriforceGlowCycle]++;
-    if (ram[TriforceGlowCycle] === 0x08) {
+    if (!$br('Z_02:1043', ram[TriforceGlowCycle] !== 0x08)) {
       ram[TriforceGlowTimer] = 0x10; // delay twice as long for one step
       ram[TriforceGlowCycle] = 0x00;
     }
@@ -256,7 +270,7 @@ export function AnimateDemoPhase0Subphase0Artifacts() {
 
 export function UpdateWaterfallAnimation() {
   // UpdateWaterfallAnimation (Z_02)
-  if (ram[InitializedWaterfallAnimation] === 0) {
+  if (!$br('Z_02:1070', ram[InitializedWaterfallAnimation] !== 0)) {
     ram[TitleWaveYs + 0] = 0xb6;
     ram[TitleWaveYs + 1] = 0xc8;
     ram[TitleWaveYs + 2] = 0xd8;
@@ -267,7 +281,7 @@ export function UpdateWaterfallAnimation() {
     ram[InitializedWaterfallAnimation]++;
   }
   // @UpdateSprites
-  for (let x = 0x02; x >= 0; x--) UpdateSpritesForWaterfallWave(x);
+  for (let x = 0x02; ;) { UpdateSpritesForWaterfallWave(x); x--; if (!$br('Z_02:1094', x >= 0)) break; }
   UpdateSpritesForWaterfallCrest();
 }
 
@@ -275,9 +289,10 @@ export function UpdateWaterfallAnimation() {
 export function UpdateSpritesForWaterfallWave(x) {
   // UpdateSpritesForWaterfallWave (Z_02): add 2 to the wave Y, keeping it in $B2..$E2.
   ram[TitleWaveYs + x] += 2;
+  $pxa('Z_02:1103', TitleWaveYs, x);
   let a = ram[TitleWaveYs + x];
   cpu.cmp(a, 0xe3);
-  if (cpu.c) {
+  if (!$br('Z_02:1105', !cpu.c)) {
     a = 0xb2;
     ram[TitleWaveYs + x] = a;
   }
@@ -286,24 +301,27 @@ export function UpdateSpritesForWaterfallWave(x) {
   let y = a;
   a = 0x10;
   cpu.cmp(y, 0xc2);
-  if (!cpu.c) {
+  if (!$br('Z_02:1120', !!cpu.c)) {
     a = cpu.lsr(a);
     cpu.cmp(y, 0xb9);
-    if (!cpu.c) a = 0x00;
+    if (!$br('Z_02:1123', !!cpu.c)) a = 0x00;
   }
   // @SetOffset
   ram[0x00] = a;
   ram[0x02] = x;
   const tiles = table(rom(), 'WaterfallWaveTiles');
   const xs = table(rom(), 'WaterfallSpriteXs');
+  $pxa('Z_02:1129', table(rom(), 'WaterfallWaveSpriteOffsets').addr, x);
   y = table(rom(), 'WaterfallWaveSpriteOffsets').byte(x);
-  for (x = 0x03; x >= 0; x--) {
+  for (x = 0x03; ;) {
+    $pxa('Z_02:1133', tiles.addr, x); $pxa('Z_02:1137', xs.addr, x);
     cpu.c = 0; // CLC
     ram[Sprites + 1 + y] = cpu.adc(tiles.byte(x), ram[0x00]);
     ram[Sprites + 3 + y] = xs.byte(x);
     ram[Sprites + y] = ram[0x05];
     ram[Sprites + 2 + y] = 0x00; // normal, palette 4
     y = (y + 4) & 0xff;
+    x--; if (!$br('Z_02:1148', x >= 0)) break;
   }
   return ram[0x02]; // LDX $02
 }
@@ -314,18 +332,20 @@ export function UpdateSpritesForWaterfallCrest() {
   const tiles = table(rom(), 'WaterfallCrestTiles');
   const xs = table(rom(), 'WaterfallSpriteXs');
   let y = 0xf0;
-  for (let x = 0x03; x >= 0; x--) {
+  for (let x = 0x03; ;) {
+    $pxa('Z_02:1161', tiles.addr, x); $pxa('Z_02:1165', xs.addr, x);
     ram[Sprites + 1 + y] = cpu.adc(ram[FrameCounter] & 0x08, tiles.byte(x));
     ram[Sprites + y] = 0xa8; // fixed Y
     ram[Sprites + 3 + y] = xs.byte(x);
     ram[Sprites + 2 + y] = 0x00; // normal, palette 4
     y = (y + 4) & 0xff;
+    x--; if (!$br('Z_02:1174', x >= 0)) break;
   }
 }
 
 export function AnimateDemoPhase0Subphase1() {
   // AnimateDemoPhase0Subphase1 (Z_02): palette cycle, then go to the story (phase 1).
-  if (ram[DemoPhase0Subphase1Timer] === 0) {
+  if (!$br('Z_02:1254', ram[DemoPhase0Subphase1Timer] !== 0)) {
     // Addr = DemoPhase0Subphase1Palettes + DemoPhase0Subphase1Cycle * $20
     ram[0x01] = 0;
     let a = ram[DemoPhase0Subphase1Cycle];
@@ -345,12 +365,18 @@ export function AnimateDemoPhase0Subphase1() {
     let y = 0x1f;
     ram[DynTileBuf + 4 + y] = 0xff; // end marker
     const src = word(0x00);
-    for (; y >= 0; y--) ram[DynTileBuf + 3 + y] = read((src + y) & 0xffff);
+    for (;;) {
+      $pxa('Z_02:1284', src, y);
+      ram[DynTileBuf + 3 + y] = read((src + y) & 0xffff);
+      y--; if (!$br('Z_02:1287', y >= 0)) break;
+    }
     ram[DemoPhase0Subphase1Cycle]++;
     y = ram[DemoPhase0Subphase1Cycle];
-    ram[DemoPhase0Subphase1Timer] = table(rom(), 'DemoPhase0Subphase1Delays').byte(y - 1);
+    const delays = table(rom(), 'DemoPhase0Subphase1Delays');
+    $pxa('Z_02:1294', delays.addr - 1, y);
+    ram[DemoPhase0Subphase1Timer] = delays.byte(y - 1);
     cpu.cmp(y, 0x0e);
-    if (cpu.c) {
+    if (!$br('Z_02:1297', !cpu.c)) {
       // End of the cycle: advance to the next demo phase, to be initialized.
       ram[DemoPhase]++;
       ram[DemoSubphase] = 0;

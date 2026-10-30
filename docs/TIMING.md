@@ -5,7 +5,8 @@ Objetivo: que la imagen del port sea idéntica a la del original también cuando
 dan diff 0, pero el port ejecuta la lógica "en tiempo cero" y solo cuenta ciclos en los bucles
 temporizados (`ppu.waitSprite0Clear/Hit`, `ppu.cpuCycles(n)` en `src/game/ppu/sprite0.js`).
 
-Todo lo de este documento está en `tools/timing/` y `tests/timing/` (no toca `src/`).
+**Estado (Pasos 0-4 hechos; imagen pixel perfect contra el oráculo en los 72 movies): ver §10.** El rastreador ya vive en
+`src/core/timing.js`; las secciones 2-8 describen la medición y el diseño que llevaron a él.
 
 ## 1. Resumen
 
@@ -246,7 +247,7 @@ desensamblado, que es fijo) y verificada en cada ejecución. El JS conserva su f
 condiciones como `if (ram[X] !== 0)` por `if (!$br('Z_07:391', ram[X] === 0))` y convirtió bucles `for` en
 la forma del asm (salto al final). El coste en JS es una llamada por decisión.
 
-## 6. Prototipo
+## 6. Prototipo (sustituido por `src/core/timing.js`; `tools/timing/proto` se ha retirado)
 
 ```sh
 # frame 121 (semilla del oráculo para esa NMI)
@@ -388,3 +389,123 @@ tools/timing/
   proto/frame121.mjs, bench.mjs    prototipo y medida de rendimiento
 tests/timing/                      classify, nmi-model, cfg-tracker, replay, prototype
 ```
+
+## 10. Estado de la implementación (src/)
+
+### Paso 0 — decisiones
+
+* **API**: `$br('Z_0b:línea', tomado)`, `$pxa('Z_0b:línea', base, índice)` / `$px(ref, cruza)` y
+  `pollStatus(ppu, máscara, hastaQueEsté)` de `src/core/timing.js` (documentada en `docs/ARCHITECTURE.md` §3.1).
+  **Sin `enter/leave`**: el rastreador sigue `JSR`/`RTS`/`JMP` del asm por sí mismo con una pila de retornos
+  propia (en el asm no hay más trucos de pila que `TableJump`, que es automático). Las rutinas se verifican a
+  través de las migas: cada `$br` nombra una línea de una rutina concreta y la E/S comprueba el registro.
+  Así cuestan menos anotaciones y no hay que envolver 1 250 funciones con `try/finally`.
+* **Referencia**: el diff de CI se hace en modo `jsnes` (jsnes-compat) contra el oráculo jsnes; es el modo por
+  defecto de `src/headless.js`, de la batería y de la página. `hardware` queda como modo experimental (punto
+  impar, render por puntos; DMC con robos de 4 ciclos: falta el modelo 1-4 de hardware y un oráculo Mesen).
+
+### Paso 1 — infraestructura
+
+| Pieza | Fichero |
+|---|---|
+| Generador del grafo (líneas y direcciones, sin bytes de ROM) | `scripts/gen-cfg.mjs` → `src/core/cfg.gen.js` (26 KB); `npm run gen-cfg` |
+| Decodificador con la ROM (opcode, modo, ciclos, destinos; ids enteros, arrays tipados; 5 ms) | `src/core/cfg.js`, `src/core/opcodes.js` |
+| Rastreador (segmentos sin decisiones precalculados, modo estricto conmutable) y bucle de frames | `src/core/timing.js` |
+| E/S, `tableJump`, `switchBank` | `src/core/bus.js`, `src/core/asm.js` |
+| PPU con reloj absoluto (`syncTo`, `powerOn`, `nextFrame`, `onFrame`), frames de lag, modo jsnes-compat (render del fondo por línea como jsnes, PPUMASK a la línea siguiente, hit del sprite 0 una línea antes como jsnes, sin punto impar) | `src/core/ppu.js` |
+| Calendario del DMC (copia exacta de jsnes: temporizador de muestras, `extraCycles`, robos de 4 ciclos) | `src/core/apu-timing.js` |
+| Bucle: `runFrame` (frame lógico = hasta el `RTI`), `runVideoFrame` (60,0988 Hz = frames de vídeo; las imágenes de lag se muestran sin NMI nueva), `runReset` | `src/core/loop.js`, `src/headless.js`, `src/main.js` |
+| Latencia de la NMI (reglas de jsnes, ≥5 puntos), OAM DMA 513/514, NMI anidada (antes del `RTI`), arranque (alineación de jsnes: `IsrReset` en el ciclo 7, PPU en 241/1 en el punto 16) | `Tracker.runUntil/stepFrame` |
+
+Sin anotaciones completas, el modo no estricto no rompe nada: al fallar una miga, esa NMI sigue con el
+modelo antiguo y la siguiente arranca con un inicio aproximado (±2 ciclos de fase). **RAM/SRAM diff 0 en los 72
+movies** con el rastreador encendido.
+
+### Paso 4 — limpieza
+
+`sprite0.js` ya no tiene contadores a mano (bucles de retardo con `$br`, `pollStatus`); `IsrNmi` usa
+`pollStatus` para `@WaitVBlankEnd` e `IsrReset` para sus dos esperas de vblank. `ppu.waitStatus/cpuCycles`
+quedan solo como respaldo del modo `off` y de las NMIs sin anotar.
+
+### Anotaciones (Paso 2, completo)
+
+Todo el juego está anotado: `node tools/timing/coverage.mjs --all` da **0 saltos sin `$br`, 0 lecturas
+indexadas sin `$pxa` y 0 anotaciones erróneas o sobrantes** en los 25 paquetes (1 251 rutinas, 2 806
+saltos). Reglas que salieron al anotar:
+
+* Las tablas de `BANK_01_CODE` (se ejecuta desde la copia en WRAM, `$6C90+`) y de `BANK_06_DATA` llevan en
+  `$pxa` la dirección de ejecución, `label(nombre).addr`, no la de carga en ROM (`table().addr`): el byte
+  bajo difiere y el cruce de página saldría mal.
+* Los ayudantes JS compartidos por varias ramas del asm reciben las refs como parámetro.
+* `zp,X`/`zp,Y` se envuelven a `& 0xff` donde el índice puede pasar de `$FF`; los `($zp),Y` van por el bus.
+
+Arreglos del núcleo hechos durante el Paso 2:
+
+* `ppu.js` (modo jsnes): al llegar `sync` justo a la línea 261 punto 1 se borran ahí las banderas de vblank y
+  sprite 0, como jsnes tras su bucle (un sondeo de más en `@WaitVBlankEnd`, Z_07:442).
+* `timing.js finishPicture(rtiEnd, nmiStart)`: no dibuja un frame de más; si la PPU ya pasó el inicio de
+  frame del `RTI` se para, y si la NMI siguiente empieza justo tras el `RTI` (NMI de lag) dibuja solo hasta
+  ella. Era la causa de las clases `lag`, `late-write` y `nested-nmi`.
+* `timing.js`: `GetObjectMiddle` (Z_01:5572) no tiene `RTS` propio, cae en el byte `$60` de
+  `ObjTypeToDamagePoints`; `rtsAfter` trata como `RTS` una instrucción sin sucesor seguida de `$60`.
+* `timing.js` (`seedNmi`, solo herramientas): al imponer el inicio de la NMI se conserva la duración propia
+  de su secuencia de entrada (7 ciclos + un robo del DMC que puede caer dentro). Antes se ponía
+  `inicio + 7` y `cycle-diff --resync` daba desfases falsos de 4 ciclos (≈1 900 NMIs en 38 movies) que el
+  modo encadenado no tenía.
+
+### Resultados (2026-10-30, verificación final)
+
+* `cycle-diff --all --strict` (encadenado desde el encendido, sin semillas): **72/72 movies sin
+  diferencia, 799 997 NMIs**: cada inicio de NMI, cada acceso de E/S (`$2000-$401F`, ciclo y valor) y cada
+  `RTI` en el ciclo del oráculo, incluidas las NMIs de lag, las anidadas (`boss-gleeok4` 6653,
+  `fuzz-boss-gleeok4`) y el modo 8. `--resync` también da 72/72.
+* Comprobación por instrucción (`out/verif/crumbdiff.mjs`, no está en el repo: traza del PC del oráculo
+  contra las migas, 1 de cada 7 NMIs de los 72 movies, 114 316 NMIs): **0 cambios de desfase entre migas**
+  (descarta errores de 1 ciclo que un bucle de sondeo pudiera absorber). Los únicos "saltos con bandera
+  distinta" (Z_07:3468, Z_04:6535) son `BNE` al destino siguiente: falsos positivos del comprobador.
+* Batería (`tools/oracle/battery.mjs movies --require-zero`, modo jsnes): **0 frames distintos, 0 px,
+  RAM/SRAM diff 0 (0 DEFECT)** en los 72 movies (800 069 registros, 799 983 imágenes tras NMI). Además
+  compara **cada frame de vídeo** (también los de lag dentro de NMIs largas, que la comparación por NMI no
+  ve): 809 870 frames de vídeo, 0 distintos, y el mismo número de frames de vídeo en oráculo y port en
+  todos los movies. Las 14 NMIs sin imagen propia en el oráculo (`noFb`: 23588 en los movies de Ganon/Patra,
+  NMIs anidadas de Gleeok) no son una excepción: el original no muestra ninguna imagen entre ellas y la
+  siguiente, y la comparación por frame de vídeo cubre ese tramo.
+* No queda ninguna diferencia, así que no hace falta documentar limitaciones del oráculo para este objetivo.
+  Las limitaciones de jsnes de §4 siguen valiendo para el modo `hardware`.
+* Coste (máquina en reposo, `bench.mjs`, 8 000 frames): `off` 1,08-1,13 ms/frame, **`jsnes` 0,59-0,63
+  ms/frame** (987-1 198 migas/NMI, 0 fallos), `hardware` 2,15-2,31 ms/frame. Bucle del navegador
+  (`runVideoFrame` como en `src/main.js`, 20 000 frames de vídeo de `ow-tour`, `boss-ganon`, `uw-enemies-a`):
+  media 0,53-0,57 ms, p99 0,79 ms, **máximo 7,9 ms** (las cargas largas), frente a 16,64 ms por frame a
+  60,0988 Hz.
+* `npm test` verde; `BATTERY=1 node --test tests/oracle/battery.test.mjs` exige ahora 0 px y 0 frames de
+  vídeo distintos; `p22-oracle` ya no tolera los frames de NMI anidada salvo con `ZELDA_TIMING=off`.
+
+### Herramientas para los Pasos 2 y 3
+
+```sh
+node tools/timing/coverage.mjs P05                 # por rutina: saltos sin $br, lecturas sin $pxa, anotaciones erróneas/sobrantes
+node tools/timing/coverage.mjs --all               # resumen por paquete; --routine Nombre; --check (código 1 si falta algo)
+node tools/timing/cycle-diff.mjs title-start       # desde el encendido, para en el primer desfase (acceso E/S, inicio de NMI o RTI) con rutina y línea
+node tools/timing/cycle-diff.mjs title-start --seed 7 --frames 121   # semilla del oráculo en la NMI 7, el resto encadenado
+node tools/timing/cycle-diff.mjs <movie> --resync  # cada NMI con su inicio del oráculo: lista de trabajo por ubicación del primer fallo
+node tools/timing/cycle-diff.mjs <movie> --resync --nmi 1599          # detalle de una NMI (contexto en oráculo y port)
+node tools/timing/cycle-diff.mjs --all [--resync] [--jobs J]          # todos los movies en paralelo; out/timing/cycle-diff/{summary,worklist}.json
+node tools/oracle/battery.mjs movies [--timing jsnes|hardware|off] [--require-zero]   # px distintos (objetivo 0) + clases como ayuda
+ZELDA_TIMING_STRICT=1 node ...                      # cualquier herramienta: TimingError en la primera miga errónea
+node --test tests/timing/                           # incluye tracker.test.mjs (cfg.gen al día, modelo DMC == jsnes, arranque, 7-121, 0 px)
+```
+
+Flujo de un anotador: `coverage.mjs Pxx` para la lista estática; `cycle-diff --resync --all` para ver qué
+NMIs fallan y dónde (el mensaje dice la línea del asm donde está el rastreador y qué miga recibió); corregir;
+repetir hasta que `cycle-diff --all` (sin `--resync`) no encuentre desfases y la batería dé 0 px.
+
+### Pendiente
+
+* Modo `hardware`: DMC de 1-4 ciclos (hoy 4 como jsnes) y validación por punto con el segundo oráculo
+  (Mesen2, `tools/oracle-mesen/`); su render por puntos cuesta ~2,2 ms/frame (se podría optimizar como el
+  modo jsnes).
+* Modo `off` (sin rastreador): el corte del sprite 0 escribe justo tras el hit (sin retardos contados a
+  mano); solo es un respaldo.
+* 6 saltos de enemigos nunca se ejecutan en los movies (código muerto o salas no visitadas: Z_04:306/311,
+  2135, 3232/3234, 4160) y algunos de jefes (`Gleeok_ContractSegment*`, `Digdogger_SlowDown`, `Unused_*`):
+  anotados leyendo el asm, sin verificación contra el oráculo.

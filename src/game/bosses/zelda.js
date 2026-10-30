@@ -12,16 +12,21 @@ import { Link_EndMoveAndDraw_Bank4 } from '../link/anim.js';
 import { FillTileMap } from '../world/tilemap.js';
 import { AnimateAndDrawCommonObject } from '../enemies/keese-bubble.js';
 import { CheckMonsterCollisions } from '../combat/collisions.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitZelda (Z_04). Guard fires ($3F) in slots 5..1 at GuardFireXs/Ys; slot 1 becomes Zelda ($37). */
 export function InitZelda() {
   // InitZelda (Z_04)
   const xs = table(bus.rom, 'GuardFireXs');
   const ys = table(bus.rom, 'GuardFireYs');
-  for (let x = 5; x !== 0; x--) {
+  for (let x = 5; ;) {
+    $pxa('Z_04:9467', xs.addr - 1, x);
     ram[ObjX + x] = xs.byte(x - 1);
+    $pxa('Z_04:9469', ys.addr - 1, x);
     ram[ObjY + x] = ys.byte(x - 1);
     ram[ObjType + x] = 0x3f;
+    x--;
+    if (!$br('Z_04:9474', x !== 0)) break;
   }
   ram[ObjType + 1] = 0x37;
 }
@@ -33,10 +38,10 @@ export function InitZelda() {
 export function UpdateZelda(x) {
   // UpdateZelda (Z_04)
   Person_Draw(x);
-  if (ram[ObjState + x] !== 0) return UpdateZelda_State1(x);
+  if ($br('Z_04:9590', ram[ObjState + x] !== 0)) return UpdateZelda_State1(x);
   const lx = ram[ObjX];
-  if (lx < 0x70 || lx >= 0x81) return L129B7_Exit();
-  if (ram[ObjY] !== 0x95) return L129B7_Exit();
+  if ($br('Z_04:9597', lx < 0x70) || $br('Z_04:9599', lx >= 0x81)) return L129B7_Exit();
+  if ($br('Z_04:9602', ram[ObjY] !== 0x95)) return L129B7_Exit();
   ram[ObjState + x]++;
   ram[ObjState] = 0x40;
   ram[ObjX] = 0x88;
@@ -58,7 +63,7 @@ export function UpdateZelda_State1(x) {
   Link_EndMoveAndDraw_Bank4();
   x = xAfterLinkEndMoveAndDraw(x);
   const a = ram[ObjTimer + x]; // LDA ObjTimer, X with the X the drawing of Link leaves
-  if (a !== 0) return L129B7_Exit();
+  if ($br('Z_04:9634', a !== 0)) return L129B7_Exit();
   ram[IsUpdatingMode] = a;
   ram[GameSubmode] = a;
   ram[ObjState] = a;
@@ -85,7 +90,8 @@ export function UpdateGuardFire(x) {
   // UpdateGuardFire (Z_04)
   AnimateAndDrawCommonObject(0x06, x);
   CheckMonsterCollisions(x);
-  if (ram[ObjMetastate + x] === 0) return L129EA_Exit();
+  $pxa('Z_04:9661', ObjMetastate, x);
+  if ($br('Z_04:9662', ram[ObjMetastate + x] === 0)) return L129EA_Exit();
   return SetDeadDummyObjType(x); // falls through
 }
 

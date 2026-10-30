@@ -4,6 +4,7 @@
 
 import { ram, peek } from '../../core/ram.js';
 import { label } from '../../core/rom.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   DynTileBuf, ForceSwordShot, HeartValues, HeartPartial, InvRupees, InvMagicKey, InvKeys, InvBombs,
 } from '../../core/vars.js';
@@ -15,12 +16,12 @@ import {
 export function FormatStatusBarText() {
   // FormatStatusBarText (Z_01)
   const tpl = label('StatusBarTransferBufTemplate').addr; // read from its WRAM copy, like the original
-  for (let y = 0x28; y >= 0; y--) ram[DynTileBuf + y] = peek(tpl + y);
+  for (let y = 0x28; ;) { $pxa('Z_01:2882', tpl, y); ram[DynTileBuf + y] = peek(tpl + y); y--; if (!$br('Z_01:2885', y >= 0)) break; }
   ram[0x0e] = ram[HeartValues];
   ram[0x0f] = ram[HeartPartial];
   FormatHeartsInTextBuf(0x03);
   FormatDecimalCountByteInTextBuf(ram[InvRupees], 0x1b); // LDX #$02 is overwritten
-  if (ram[InvMagicKey] !== 0) {
+  if (!$br('Z_01:2898', ram[InvMagicKey] === 0)) {
     // Magic key: "XA" instead of the key count.
     ram[0x00] = 0x21;
     ram[0x01] = 0x21; // "X"
@@ -46,10 +47,12 @@ export function CopyTripletToTextBuf() {
   // CopyTripletToTextBuf (Z_01)
   let x = ram[0x00];
   let a = 0;
-  for (let y = 0x02; y >= 0; y--) {
+  for (let y = 0x02; ;) {
+    $pxa('Z_01:2933', 0x0001, y);
     a = ram[0x01 + y];
     ram[(DynTileBuf + x) & 0xffff] = a;
     x = (x - 1) & 0xff;
+    y--; if (!$br('Z_01:2937', y >= 0)) break;
   }
   return a;
 }
@@ -63,9 +66,9 @@ export function FormatDecimalCountByte(a) {
   const r = FormatDecimalByte(a);
   a = r.a;
   let y = r.y;
-  if (y === 0x24) y = 0x21;
+  if (!$br('Z_01:2956', y !== 0x24)) y = 0x21;
   ram[0x01] = y;
-  if (a !== 0x24) return a;
+  if ($br('Z_01:2961', a !== 0x24)) return a;
   return FormatCharDoublet(ram[0x03]); // falls through
 }
 
@@ -88,9 +91,9 @@ export function FormatDecimalByte(a) {
   r = DivideBy10(r.y); // TYA
   a = r.a;
   let y = r.y;
-  if (y === 0x00) {
+  if (!$br('Z_01:3171', y !== 0x00)) {
     y = 0x24;
-    if (a === 0x00) a = y; // TYA
+    if (!$br('Z_01:3174', a !== 0x00)) a = y; // TYA
   }
   ram[0x02] = a;
   ram[0x01] = y;
@@ -101,9 +104,11 @@ export function FormatDecimalByte(a) {
 export function DivideBy10(a) {
   // DivideBy10 (Z_01): the BNE back to @Loop never falls into FormatHeartsInTextBuf (Y < 26).
   let y = 0x00;
-  while (a >= 0x0a) {
+  for (;;) {
+    if ($br('Z_01:3195', a < 0x0a)) break;
     a -= 0x0a;
     y = (y + 1) & 0xff;
+    $br('Z_01:3198', y !== 0); // never 0 (Y < 26)
   }
   return { a, y };
 }
@@ -123,24 +128,27 @@ export function FormatHeartsInTextBuf(y) {
   ram[0x0b] = (y + 0x07) & 0xff; // offset of last heart in top row
   y = 0x07;
   do {
-    if (y === 0xff) {
+    if (!$br('Z_01:3253', y !== 0xff)) {
       ram[0x0b] = (ram[0x0d] + 0x12) & 0xff; // offset of last heart in bottom row
       y = 0x12;
     }
-    if (ram[0x0e] === 0 || x < ram[0x01]) {
+    if ($br('Z_01:3264', ram[0x0e] === 0) || !$br('Z_01:3266', x >= ram[0x01])) {
       a = 0x24; // blank tile
-    } else if (x === ram[0x00]) {
+      $br('Z_01:3270', true);
+    } else if ($br('Z_01:3274', x === ram[0x00])) {
       a = ram[0x0f];
-      if (a === 0) a = 0x66; // empty heart
-      else if (a >= 0x80) a = 0xf2; // full heart
+      if ($br('Z_01:3283', a === 0)) a = 0x66; // empty heart
+      else if ($br('Z_01:3285', a >= 0x80)) { a = 0xf2; $br('Z_01:3279', true); } // full heart
       else {
         ram[ForceSwordShot] = 0x00;
         a = 0x65; // half heart
+        $br('Z_01:3289', true);
       }
-    } else if (x < ram[0x00]) {
+    } else if ($br('Z_01:3275', x < ram[0x00])) {
       a = 0x66; // empty heart
     } else {
       a = 0xf2; // full heart
+      $br('Z_01:3279', true);
     }
     ram[0x0c] = y;
     ram[DynTileBuf + ram[0x0b]] = a;
@@ -148,6 +156,6 @@ export function FormatHeartsInTextBuf(y) {
     y = ram[0x0c];
     y = (y - 1) & 0xff;
     x++;
-  } while (x !== 0x10);
+  } while ($br('Z_01:3303', x !== 0x10));
   return a;
 }

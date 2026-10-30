@@ -11,12 +11,13 @@ import { FillWalls, LayoutUWFloor } from './underworld.js';
 import { LayOutDoors } from './doors-draw.js';
 import { AddDoorFlagsToCurOpenedDoors } from './doors.js';
 import { GetUniqueRoomId } from './roomflags.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** LayOutRoom (Z_05): lays out the current room (OW or UW) in PlayAreaTiles. */
 export function LayOutRoom() {
   // LayOutRoom (Z_05)
   PatchColumnDirectoryForCellar();
-  if (ram[CurLevel] === 0) {
+  if ($br('Z_05:5632', ram[CurLevel] === 0)) {
     // Is in OW (label inside UpdateMode12EndLevel_Sub4).
     LayoutRoomOW();
     return CheckShortcut();
@@ -36,7 +37,7 @@ export function PatchColumnDirectoryForCellar() {
   const heap = table(bus.rom, 'ColumnHeapOWAddr');
   let a = heap.byte(0);
   let x = heap.byte(1);
-  if (ram[CurLevel] !== 0) {
+  if (!$br('Z_05:6025', ram[CurLevel] === 0)) {
     const cellar = label('ColumnHeapUWCellar').addr;
     a = cellar & 0xff;
     x = cellar >> 8;
@@ -49,7 +50,9 @@ export function PatchColumnDirectoryForCellar() {
 function layoutSubroomAndAdvanceSubmode(x) {
   // shared tail of LayoutCaveAndAvanceSubmode (the ':' label)
   const addrs = table(bus.rom, 'SubroomLayoutAddrs');
+  $pxa('Z_05:6044', addrs.addr, x);
   ram[0x02] = addrs.byte(x);
+  $pxa('Z_05:6046', addrs.addr + 1, x);
   ram[0x03] = addrs.byte(x + 1);
   ram[GameSubmode]++;
   return LayoutRoomOrCaveOW();
@@ -64,6 +67,7 @@ export function LayoutCaveAndAvanceSubmode() {
 /** LayoutShortcutAndAdvanceSubmode (Z_05): lays out the shortcut cave; INC GameSubmode. */
 export function LayoutShortcutAndAdvanceSubmode() {
   // LayoutShortcutAndAdvanceSubmode (Z_05)
+  $br('Z_05:6053', true);
   return layoutSubroomAndAdvanceSubmode(0x02);
 }
 
@@ -72,7 +76,9 @@ export function LayoutCellarAndAdvanceSubmode() {
   // LayoutCellarAndAdvanceSubmode (Z_05)
   ram[CurRow] = 0;
   const a = GetUniqueRoomId();
-  return layoutSubroomAndAdvanceSubmode((a & 0x01) === 0 ? 0x04 : 0x06);
+  if ($br('Z_05:6067', (a & 0x01) === 0)) return layoutSubroomAndAdvanceSubmode(0x04);
+  $br('Z_05:6069', true);
+  return layoutSubroomAndAdvanceSubmode(0x06);
 }
 
 /** LayoutRoom_SubmodeTask (Z_05): LayOutRoom, CurRow = 0, INC GameSubmode. */
@@ -90,6 +96,7 @@ export function LayoutRoom_SubmodeTask() {
 export function IsDarkRoom_Bank5(y) {
   // IsDarkRoom_Bank5 (Z_05)
   const a = ram[CurLevel];
-  if (a === 0) return a;
+  if ($br('Z_05:7830', a === 0)) return a;
+  $pxa('Z_05:7831', LevelBlockAttrsE, y);
   return peek(LevelBlockAttrsE + y) & 0x80;
 }

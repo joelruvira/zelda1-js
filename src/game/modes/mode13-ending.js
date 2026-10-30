@@ -24,6 +24,7 @@ import { Anim_WriteSpecificItemSprites } from '../draw/items.js';
 import { AnimateItemObject } from '../items/roomitem.js';
 import { SwitchProfileToSecondQuest } from '../save/files.js';
 import { UpdateMode13WinGame_Sub3 } from './credits.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 // ------------------------------------------------------------------ init
 
@@ -38,7 +39,7 @@ export function InitMode13_Full() {
 export function InitMode13_Sub0() {
   // InitMode13_Sub0 (Z_02)
   UpdateEndGameCurtainEffect();
-  if (ram[GameSubmode] === 0) return; // LA958_Exit
+  if ($br('Z_02:3217', ram[GameSubmode] === 0)) return; // LA958_Exit
   HideAllSprites();
   Link_EndMoveAndDraw();
   return Person_Draw(0x01); // Zelda is in object slot 1
@@ -47,10 +48,10 @@ export function InitMode13_Sub0() {
 /** UpdateEndGameCurtainEffect (Z_02): after the timer and the song, curtain until the middle. */
 export function UpdateEndGameCurtainEffect() {
   // UpdateEndGameCurtainEffect (Z_02)
-  if (ram[ObjTimer] !== 0) return;
-  if (ram[Song] !== 0) return;
+  if ($br('Z_02:3225', ram[ObjTimer] !== 0)) return;
+  if ($br('Z_02:3227', ram[Song] !== 0)) return;
   UpdateWorldCurtainEffect_Bank2();
-  if (ram[ObjX + 12] >= 0x11) return; // right curtain edge not in the middle yet
+  if ($br('Z_02:3234', ram[ObjX + 12] >= 0x11)) return; // right curtain edge not in the middle yet
   ram[ObjTimer] = 0x80; // UNKNOWN: looks unneeded
   ram[GameSubmode]++;
 }
@@ -59,7 +60,7 @@ export function UpdateEndGameCurtainEffect() {
 export function InitMode13_Sub1() {
   // InitMode13_Sub1 (Z_02)
   const t = table(bus.rom, 'PlayAreaAttr0TransferBuf');
-  for (let y = 4; y >= 0; y--) ram[DynTileBuf + y] = t.byte(y);
+  for (let y = 4; ;) { $pxa('Z_02:3251', t.addr, y); ram[DynTileBuf + y] = t.byte(y); y--; if (!$br('Z_02:3254', y >= 0)) break; }
   ram[TextboxCharPtr] = 0xa4; // front of the first textbox line
   ram[TextboxCharIndex] = 0x00;
   ram[ObjState + 1] = 0x00;
@@ -70,7 +71,7 @@ export function InitMode13_Sub1() {
 export function InitMode13_Sub2() {
   // InitMode13_Sub2 (Z_02)
   UpdateZeldaTextbox();
-  if (ram[ObjState + 1] === 0) return;
+  if ($br('Z_02:3278', ram[ObjState + 1] === 0)) return;
   ram[ObjTimer + 1] = 0x50;
   ram[GameSubmode]++;
 }
@@ -82,30 +83,35 @@ export function InitMode13_Sub2() {
 export function UpdateZeldaTextbox() {
   // UpdateZeldaTextbox (Z_02)
   Link_EndMoveAndDraw();
-  if (ram[ObjTimer + 1] !== 0) return; // LA9F4_Exit
+  if ($br('Z_02:3301', ram[ObjTimer + 1] !== 0)) return; // LA9F4_Exit
   ram[ObjTimer + 1] = 0x06;
   const tpl = table(bus.rom, 'ThanksTextboxCharTransferRecTemplate');
-  for (let y = 4; y >= 0; y--) ram[DynTileBuf + y] = tpl.byte(y);
+  for (let y = 4; ;) { $pxa('Z_02:3312', tpl.addr, y); ram[DynTileBuf + y] = tpl.byte(y); y--; if (!$br('Z_02:3315', y >= 0)) break; }
   const text = label('ThanksText').addr;
   let y;
   let a;
-  do {
+  for (;;) {
     ram[DynTileBuf + 1] = ram[TextboxCharPtr];
     ram[TextboxCharPtr]++;
     ram[0x00] = text & 0xff;
     ram[0x01] = text >> 8;
     y = ram[TextboxCharIndex];
     ram[TextboxCharIndex]++;
+    $pxa('Z_02:3337', text, y);
     a = read((ram[0x00] | (ram[0x01] << 8)) + y) & 0x3f; // LDA ($00), Y
-  } while (a === 0x25); // special space: takes room but no time
+    if (!$br('Z_02:3344', a === 0x25)) break; // special space: takes room but no time
+  }
   ram[DynTileBuf + 3] = a;
   ram[Tune0Request] = 0x10; // "heart taken/character" tune
+  $pxa('Z_02:3354', text, y);
   a = read((ram[0x00] | (ram[0x01] << 8)) + y) & 0xc0;
-  if (a === 0) return;
+  if ($br('Z_02:3356', a === 0)) return;
   // $80: second line, $40: third line, $C0: end of the text (first line).
-  y = a === 0xc0 ? 0x02 : a === 0x40 ? 0x01 : 0x00;
-  ram[TextboxCharPtr] = table(bus.rom, 'ThanksTextboxLineAddrsLo').byte(y);
-  if (y !== 0x02) return;
+  y = $br('Z_02:3364', a === 0xc0) ? 0x02 : $br('Z_02:3367', a === 0x40) ? 0x01 : 0x00;
+  const lines = table(bus.rom, 'ThanksTextboxLineAddrsLo');
+  $pxa('Z_02:3375', lines.addr, y);
+  ram[TextboxCharPtr] = lines.byte(y);
+  if ($br('Z_02:3382', y !== 0x02)) return;
   ram[ObjState + 1]++;
   ram[ObjState] = 0x00; // unhalt Link
 }
@@ -113,7 +119,7 @@ export function UpdateZeldaTextbox() {
 /** InitMode13_Sub3 (Z_02): after the delay, silence. */
 export function InitMode13_Sub3() {
   // InitMode13_Sub3 (Z_02)
-  if (ram[ObjTimer + 1] !== 0) return; // LA9F4_Exit
+  if ($br('Z_02:3392', ram[ObjTimer + 1] !== 0)) return; // LA9F4_Exit
   SilenceAllSound();
   ram[GameSubmode]++;
 }
@@ -143,7 +149,7 @@ export function UpdateMode13WinGame_Sub0_Flash() {
   // UpdateMode13WinGame_Sub0_Flash (Z_02)
   HideAllSprites();
   ram[ItemLiftTimer]++;
-  if (ram[ItemLiftTimer] === 0xc0) {
+  if ($br('Z_02:3424', ram[ItemLiftTimer] === 0xc0)) {
     // @AdvanceSubmode
     ram[SongRequest] = 0x10; // ending song
     ram[ObjTimer] = 0x40; // wait $40 frames before the text
@@ -154,10 +160,16 @@ export function UpdateMode13WinGame_Sub0_Flash() {
   }
   // @ChangePalette
   let x = ram[ItemLiftTimer];
-  if (x < 0x40) return; // don't flash until $40 frames have passed
-  for (let y = 0x23; y >= 0; y--) ram[DynTileBuf + y] = read(LevelInfo_PalettesTransferBuf + y);
+  if ($br('Z_02:3432', x < 0x40)) return; // don't flash until $40 frames have passed
+  for (let y = 0x23; ;) {
+    $pxa('Z_02:3437', LevelInfo_PalettesTransferBuf, y);
+    ram[DynTileBuf + y] = read(LevelInfo_PalettesTransferBuf + y);
+    y--; if (!$br('Z_02:3440', y >= 0)) break;
+  }
   x &= 0x03;
-  ram[DynTileBuf + 19] = table(bus.rom, 'EndingFlashColors').byte(x); // background color
+  const colors = table(bus.rom, 'EndingFlashColors');
+  $pxa('Z_02:3449', colors.addr, x);
+  ram[DynTileBuf + 19] = colors.byte(x); // background color
 }
 
 /** DrawLinkZeldaTriforces (Z_02): Link and Zelda lifting the triforces (slots $13 and 2). */
@@ -188,7 +200,7 @@ export function DrawLinkZeldaTriforces() {
 /** UpdateMode13WinGame_Sub1 (Z_02, submodes 1 and 2): the peace text, then a delay. */
 export function UpdateMode13WinGame_Sub1() {
   // UpdateMode13WinGame_Sub1 (Z_02)
-  if (ram[EndingFlashLongTimer] === 0) {
+  if ($br('Z_02:3522', ram[EndingFlashLongTimer] === 0)) {
     // @AdvanceSubmode: transfer the ending palette.
     ram[TileBufSelector] = 0x6a;
     ram[GameSubmode]++;
@@ -196,10 +208,10 @@ export function UpdateMode13WinGame_Sub1() {
   }
   HideAllSprites();
   // Show Link and Zelda until the long timer reaches 4.
-  if (ram[EndingFlashLongTimer] < 0x04) return;
+  if ($br('Z_02:3530', ram[EndingFlashLongTimer] < 0x04)) return;
   DrawLinkZeldaTriforces();
-  if (ram[GameSubmode] !== 0x01) return; // submode 2: only delay
-  if (ram[ObjTimer] !== 0) return; // delay before the text
+  if ($br('Z_02:3536', ram[GameSubmode] !== 0x01)) return; // submode 2: only delay
+  if ($br('Z_02:3540', ram[ObjTimer] !== 0)) return; // delay before the text
   return UpdatePeaceTextbox();
 }
 
@@ -207,22 +219,26 @@ export function UpdateMode13WinGame_Sub1() {
 export function UpdatePeaceTextbox() {
   // UpdatePeaceTextbox (Z_02)
   ram[PeaceCharDelayCounter]++;
-  if ((ram[PeaceCharDelayCounter] & 0x07) !== 0x04) return; // @Exit
+  if ($br('Z_02:3581', (ram[PeaceCharDelayCounter] & 0x07) !== 0x04)) return; // @Exit
   const tpl = table(bus.rom, 'PeaceTextboxCharTransferRecTemplate');
-  for (let y = 4; y >= 0; y--) ram[DynTileBuf + y] = tpl.byte(y);
+  for (let i = 4; ;) { $pxa('Z_02:3587', tpl.addr, i); ram[DynTileBuf + i] = tpl.byte(i); i--; if (!$br('Z_02:3590', i >= 0)) break; }
   const y = ram[PeaceCharIndex];
-  let a = table(bus.rom, 'PeaceText').byte(y);
-  if (a === 0xff) {
+  const text = table(bus.rom, 'PeaceText');
+  $pxa('Z_02:3595', text.addr, y);
+  let a = text.byte(y);
+  if ($br('Z_02:3597', a === 0xff)) {
     // @AdvanceSubmode
     ram[GameSubmode]++;
     return;
   }
   ram[DynTileBuf + 3] = a;
-  if (a !== 0x24) ram[Tune0Request] = 0x10; // a regular space makes no sound
+  if (!$br('Z_02:3603', a === 0x24)) ram[Tune0Request] = 0x10; // a regular space makes no sound
   ram[PeaceCharIndex]++;
-  a = table(bus.rom, 'PeaceTextboxCharAddrsLo').byte(y);
+  const addrs = table(bus.rom, 'PeaceTextboxCharAddrsLo');
+  $pxa('Z_02:3612', addrs.addr, y);
+  a = addrs.byte(y);
   ram[DynTileBuf + 1] = a;
-  if (a >= 0xa0) return;
+  if ($br('Z_02:3618', a >= 0xa0)) return;
   ram[DynTileBuf] = 0x23; // the low VRAM address rolled over
 }
 
@@ -237,8 +253,8 @@ export function UpdateMode13WinGame_Sub4() {
   x = 0x02; // the ash pile reuses slot 2
   ram[ObjType + x] = 0x3e; // Ganon
   DrawAshPile(x);
-  if (ram[ObjTimer] !== 0) return; // LAB7E_Exit: don't skip ahead yet
-  if ((ram[ButtonsPressed] & 0x10) === 0) return;
+  if ($br('Z_02:3651', ram[ObjTimer] !== 0)) return; // LAB7E_Exit: don't skip ahead yet
+  if ($br('Z_02:3656', (ram[ButtonsPressed] & 0x10) === 0)) return;
   EndGameMode();
   ram[GameMode] = 0x0d;
   TurnOffAllVideo();

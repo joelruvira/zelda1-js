@@ -22,6 +22,7 @@ import {
   UpdatePersonState_Textbox, UpdatePersonState_CueTransferBlankPersonWares, CueTransferBufAndAdvanceState,
   PlayCharacterSfx,
 } from './textbox.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 // ------------------------------------------------------------------ init
 
@@ -40,10 +41,13 @@ export function InitUnderworldPerson_Full(x) {
 export function InitUnderworldPersonA(x) {
   // InitUnderworldPersonA (Z_01)
   SetUpCommonCaveObjects(0x78, x, 0x80);
+  $pxa('Z_01:1040', ObjType, x);
   const y = (ram[ObjType + x] - 0x4b) & 0xff;
+  $pxa('Z_01:1046', label('UnderworldPersonTextSelectorsA').addr, y);
   ram[PersonTextSelector] = table(bus.rom, 'UnderworldPersonTextSelectorsA').byte(y);
   // The "more bombs" man is gone once his offer was taken.
-  if (ram[ObjType + 1] !== 0x4f) return L_PlayCharacterSfx();
+  if ($br('Z_01:1053', ram[ObjType + 1] !== 0x4f)) return L_PlayCharacterSfx();
+  $br('Z_01:1054', true);
   return UnderworldPerson_DestroyIfTaken(x);
 }
 
@@ -59,7 +63,7 @@ export function InitUnderworldPersonLifeOrMoney_Full(x) {
 /** UnderworldPerson_DestroyIfTaken (Z_01, part of InitUnderworldPersonLifeOrMoney_Full). */
 function UnderworldPerson_DestroyIfTaken(x) {
   // UnderworldPerson_DestroyIfTaken (Z_01)
-  if (GetRoomFlagUWItemState() === 0) return L_PlayCharacterSfx();
+  if ($br('Z_01:1073', GetRoomFlagUWItemState() === 0)) return L_PlayCharacterSfx();
   ram[ObjState] = 0x00;
   return DestroyMonster(x);
 }
@@ -74,7 +78,9 @@ function L_PlayCharacterSfx() {
 export function InitUnderworldPersonB(x) {
   // InitUnderworldPersonB (Z_01)
   SetUpCommonCaveObjects(0x78, x, 0x80);
+  $pxa('Z_01:1091', ObjType, x);
   const y = (ram[ObjType + x] - 0x4b) & 0xff;
+  $pxa('Z_01:1097', label('UnderworldPersonTextSelectorsB').addr, y);
   ram[PersonTextSelector] = table(bus.rom, 'UnderworldPersonTextSelectorsB').byte(y);
   return PlayCharacterSfx();
 }
@@ -84,11 +90,13 @@ export function InitUnderworldPersonC(x) {
   // InitUnderworldPersonC (Z_01)
   SetUpCommonCaveObjects(0x78, x, 0x80);
   PlayCharacterSfx();
+  $pxa('Z_01:1110', ObjType, x);
   const a = ram[ObjType + x]; // PHA
   const y = (a - 0x4b) & 0xff;
+  $pxa('Z_01:1119', label('UnderworldPersonTextSelectorsC').addr, y);
   ram[PersonTextSelector] = table(bus.rom, 'UnderworldPersonTextSelectorsC').byte(y);
-  if (a !== 0x4b) return;
-  if (ram[InvTriforce] !== 0xff) return;
+  if ($br('Z_01:1126', a !== 0x4b)) return;
+  if ($br('Z_01:1129', ram[InvTriforce] !== 0xff)) return;
   // Open the shutters and destroy this object.
   ram[ShutterTrigger] = 0x01;
   ram[ObjState] = 0x00; // LSR
@@ -106,7 +114,7 @@ export function InitUnderworldPerson_DoNothing() {
 export function UpdateUnderworldPerson_Full(x) {
   // UpdateUnderworldPerson_Full (Z_01): levels other than 3, 4, 6, 8, 9 do more than talk.
   const lvl = ram[CurLevel];
-  if (lvl < 0x03 || lvl === 0x05 || lvl === 0x07) return UpdateUnderworldPersonComplex(x);
+  if ($br('Z_01:1175', lvl < 0x03) || $br('Z_01:1177', lvl === 0x05) || !$br('Z_01:1179', lvl !== 0x07)) return UpdateUnderworldPersonComplex(x);
   // @DrawAndCheckCollisions
   Person_DrawAndCheckCollisions(x);
   return tableJump(label('UpdateUnderworldPerson_Full_JumpTable').addr, ram[ObjState + 1], [
@@ -131,7 +139,7 @@ export function Person_CheckCollisions(x) {
   // Person_CheckCollisions (Z_01)
   CheckMonsterCollisions(x);
   const a = ram[ObjMetastate + 1];
-  if (a === 0) return;
+  if ($br('Z_01:1208', a === 0)) return;
   ram[PersonFireballsEnabled] = a;
   ram[ObjMetastate + 1] = 0x00;
 }
@@ -139,9 +147,9 @@ export function Person_CheckCollisions(x) {
 /** UpdateUnderworldPersonComplex (Z_01): X = object slot. Levels 1, 2, 5, 7 (and 0). */
 export function UpdateUnderworldPersonComplex(x) {
   // UpdateUnderworldPersonComplex (Z_01): in state 4 shown every other frame.
-  if (!(ram[ObjState + 1] === 0x04 && (ram[FrameCounter] & 0x01) !== 0)) {
+  if (!(!$br('Z_01:1219', ram[ObjState + 1] !== 0x04) && $br('Z_01:1222', (ram[FrameCounter] & 0x01) !== 0))) {
     Person_DrawAndCheckCollisions(x);
-    if (ram[ObjType + 1] === 0x4f) {
+    if (!$br('Z_01:1230', ram[ObjType + 1] !== 0x4f)) {
       // "More bombs" man: a rupee at ($78, $98) in the room item slot.
       ram[ObjX + 19] = 0x78;
       ram[ObjY + 19] = 0x98;
@@ -159,7 +167,7 @@ export function UpdateUnderworldPersonComplex(x) {
 /** UpdateUnderworldPersonComplexState_Begin (Z_01): state 0. */
 export function UpdateUnderworldPersonComplexState_Begin() {
   // UpdateUnderworldPersonComplexState_Begin (Z_01)
-  if (ram[ObjType + 1] === 0x4f) ram[TileBufSelector] = 0x6c; // "-100"
+  if (!$br('Z_01:1254', ram[ObjType + 1] !== 0x4f)) ram[TileBufSelector] = 0x6c; // "-100"
   ram[ObjTimer + 1] = 0x0a;
   ram[ObjState + 1]++;
 }
@@ -167,12 +175,12 @@ export function UpdateUnderworldPersonComplexState_Begin() {
 /** UpdateUnderworldPersonComplexState_SenseLink (Z_01): state 2. The "more bombs" purchase. */
 export function UpdateUnderworldPersonComplexState_SenseLink() {
   // UpdateUnderworldPersonComplexState_SenseLink (Z_01)
-  if (ram[ObjType + 1] !== 0x4f) return;
-  if (ram[ObjX] !== 0x78) return;
-  if (Abs((ram[ObjY] - 0x98) & 0xff) >= 0x06) return;
+  if ($br('Z_01:1269', ram[ObjType + 1] !== 0x4f)) return;
+  if ($br('Z_01:1274', ram[ObjX] !== 0x78)) return;
+  if (!$br('Z_01:1284', Abs((ram[ObjY] - 0x98) & 0xff) < 0x06)) return;
   // @CheckCanPay
   const a = 0x64;
-  if (a !== ram[InvRupees] && a >= ram[InvRupees]) return;
+  if (!$br('Z_01:1293', a === ram[InvRupees]) && $br('Z_01:1294', a >= ram[InvRupees])) return;
   ram[RupeesToSubtract] = a + ram[RupeesToSubtract];
   ram[Tune0Request] = 0x08; // "key taken"
   ram[MaxBombs] = ram[MaxBombs] + 0x04;
@@ -184,7 +192,7 @@ export function UpdateUnderworldPersonComplexState_SenseLink() {
 export function UpdateUnderworldPersonComplexState_DelayAndQuit() {
   // UpdateUnderworldPersonComplexState_DelayAndQuit (Z_01)
   const a = ram[ObjTimer + 1];
-  if (a === 0) ram[ObjType + 1] = a;
+  if (!$br('Z_01:1318', a !== 0)) ram[ObjType + 1] = a;
 }
 
 /** Person_DrawAndCheckCollisions (Z_01): X = object slot. */
@@ -198,7 +206,7 @@ export function Person_DrawAndCheckCollisions(x) {
 /** UpdateUnderworldPersonLifeOrMoney_Full (Z_01): X = object slot. */
 export function UpdateUnderworldPersonLifeOrMoney_Full(x) {
   // UpdateUnderworldPersonLifeOrMoney_Full (Z_01): in state 4 drawn every other frame.
-  if (!(ram[ObjState + 1] === 0x04 && (ram[FrameCounter] & 0x01) !== 0)) {
+  if (!(!$br('Z_01:1332', ram[ObjState + 1] !== 0x04) && $br('Z_01:1335', (ram[FrameCounter] & 0x01) !== 0))) {
     // @Draw
     Person_DrawAndCheckCollisions(x);
     DrawLifeOrMoneyItems();
@@ -215,10 +223,13 @@ export function DrawLifeOrMoneyItems() {
   // DrawLifeOrMoneyItems (Z_01)
   const xs = table(bus.rom, 'LifeOrMoneyItemXs');
   const types = table(bus.rom, 'LifeOrMoneyItemTypes');
-  for (let x = 0x01; x >= 0; x--) {
+  for (let x = 0x01; ; x--) {
+    $pxa('Z_01:1366', xs.addr, x);
     ram[ObjX + 19] = xs.byte(x);
     ram[ObjY + 19] = 0x98;
+    $pxa('Z_01:1372', types.addr, x);
     AnimateItemObject(types.byte(x), 0x13);
+    if (!$br('Z_01:1380', x - 1 >= 0)) break;
   }
 }
 
@@ -234,21 +245,23 @@ export function UpdateUnderworldPersonLifeOrMoneyState_2() {
   // UpdateUnderworldPersonLifeOrMoneyState_2 (Z_01)
   const xs = table(bus.rom, 'LifeOrMoneyItemXs');
   let x;
-  for (x = 0x01; x >= 0; x--) {
-    if (ram[ObjX] !== xs.byte(x)) continue;
-    if (Abs((ram[ObjY] - 0x98) & 0xff) < 0x06) break;
+  for (x = 0x01; ; x--) {
+    $pxa('Z_01:1397', xs.addr, x);
+    if (!$br('Z_01:1398', ram[ObjX] !== xs.byte(x))) {
+      if ($br('Z_01:1407', Abs((ram[ObjY] - 0x98) & 0xff) < 0x06)) break;
+    }
+    if (!$br('Z_01:1411', x - 1 >= 0)) return;
   }
-  if (x < 0) return;
   // @Pay
-  if (x !== 0x00) {
+  if (!$br('Z_01:1419', x === 0x00)) {
     const a = 0x32;
-    if (a !== ram[InvRupees] && a >= ram[InvRupees]) return;
+    if (!$br('Z_01:1425', a === ram[InvRupees]) && $br('Z_01:1426', a >= ram[InvRupees])) return;
     // @PayWithMoney
     ram[RupeesToSubtract] = a + ram[RupeesToSubtract];
   } else {
     // @PayWithHeartContainer
     let a = ram[HeartValues] & 0xf0;
-    if (a < 0x30) {
+    if (!$br('Z_01:1446', a >= 0x30)) {
       ram[HeartValues] = a;
       ram[HeartPartial] = 0x00;
     } else {
@@ -256,7 +269,7 @@ export function UpdateUnderworldPersonLifeOrMoneyState_2() {
       const hv = ram[HeartValues]; // PHA
       ram[0x00] = ((hv & 0xf0) - 0x10) & 0xff;
       a = ((hv & 0x0f) - 0x01) & 0xff;
-      if (a & 0x80) a = 0x00;
+      if (!$br('Z_01:1468', (a & 0x80) === 0)) a = 0x00;
       ram[HeartValues] = a | ram[0x00];
     }
   }
@@ -282,8 +295,8 @@ export function L_Person_FlagItemTakenAndAdvanceState() {
  */
 export function CheckPersonBlocking() {
   // CheckPersonBlocking (Z_01)
-  if (ram[ObjY] >= 0x8e) return;
-  if ((ram[0x0f] & 0x08) === 0) return;
+  if ($br('Z_01:3147', ram[ObjY] >= 0x8e)) return;
+  if ($br('Z_01:3150', (ram[0x0f] & 0x08) === 0)) return;
   return ResetMovingDir();
 }
 
@@ -292,7 +305,7 @@ export function Person_DrawAndCheckCollisions_Common(x) {
   // Person_DrawAndCheckCollisions_Common (Z_01)
   CheckMonsterCollisions(x);
   const a = ram[ObjMetastate + 1];
-  if (a !== 0) {
+  if (!$br('Z_01:5459', a === 0)) {
     ram[PersonFireballsEnabled] = a;
     ram[ObjMetastate + 1] = 0x00;
   }

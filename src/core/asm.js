@@ -3,12 +3,14 @@
 
 import { ram } from './ram.js';
 import { bus, read } from './bus.js';
+import { timing } from './timing.js';
 
 /**
  * SwitchBank (Z_07): five serial writes of A to $E000 (MMC1 PRG bank register).
  * Returns A as the original leaves it (bank >> 4), in case the caller uses it.
  */
 export function switchBank(bank) {
+  if (timing.on) timing.switchBank(bank); // JSR SwitchBank (opaque for the cycle tracker)
   bus.mapper.setPrgBank(bank & 0x1f);
   return (bank & 0xff) >> 4;
 }
@@ -32,5 +34,6 @@ export function tableJump(tableAddr, index, handlers) {
   ram[0x03] = read((ret + ((y + 2) & 0xff)) & 0xffff);
   const handler = handlers[index];
   if (!handler) throw new RangeError(`TableJump: no handler ${index} for table $${tableAddr.toString(16)}`);
+  if (timing.on) timing.tableJump(tableAddr, index, ram[0x02] | (ram[0x03] << 8));
   return handler();
 }

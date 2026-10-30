@@ -3,7 +3,7 @@
 
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
 import {
   CaveFlags, CavePrices, CaveCurPriceIndex, CaveCurPriceOffset, CaveChosenIndex, DynTileBuf, ObjTimer,
   ObjState, ObjType, PersonTextSelector, PersonTextPtr, PersonTextIndex, Tune0Request, InvRupees,
@@ -13,11 +13,12 @@ import { FormatDecimalByte } from '../text/format.js';
 import { SetRoomFlagUWItemState } from '../items/roomitem.js';
 import { CueTransferBufAndAdvanceState, IncCaveState } from './textbox.js';
 import { ClearPricesCaveFlag } from './cave.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** UpdateCavePersonState_TransferPrices (Z_01): state 0. Falls into WritePricesTransferBuf. */
 export function UpdateCavePersonState_TransferPrices() {
   // UpdateCavePersonState_TransferPrices (Z_01)
-  if ((ram[CaveFlags] & 0x08) === 0) return IncCaveState(); // no "show prices"
+  if ($br('Z_01:455', (ram[CaveFlags] & 0x08) === 0)) return IncCaveState(); // no "show prices"
   return WritePricesTransferBuf();
 }
 
@@ -36,8 +37,9 @@ export function WritePricesToDynamicTransferBuf(a) {
   ram[CaveCurPriceIndex] = x;
   ram[CaveCurPriceOffset] = x;
   do {
+    $pxa('Z_01:475', CavePrices, x);
     a = ram[CavePrices + x];
-    if (a === 0) {
+    if (!$br('Z_01:478', a !== 0)) {
       x = 0x24;
       ram[0x01] = x;
       ram[0x02] = x;
@@ -45,7 +47,7 @@ export function WritePricesToDynamicTransferBuf(a) {
     } else {
       FormatDecimalByte(a);
       x = 0x24;
-      if (ram[CaveFlags] & 0x80) x = 0x62; // negative amounts: "-"
+      if (!$br('Z_01:493', (ram[CaveFlags] & 0x80) === 0)) x = 0x62; // negative amounts: "-"
     }
     // @Align: move the sign next to the number.
     ram[0x04] = x;
@@ -56,8 +58,9 @@ export function WritePricesToDynamicTransferBuf(a) {
     ram[CaveCurPriceOffset] = ram[CaveCurPriceOffset] + 0x04;
     ram[CaveCurPriceIndex]++;
     x = ram[CaveCurPriceIndex];
-  } while (x !== 0x03);
+  } while ($br('Z_01:520', x !== 0x03));
   ram[ObjTimer + 1] = 0x0a; // delay at the start of the next state
+  $br('Z_01:527', true);
   return IncCaveState();
 }
 
@@ -67,7 +70,7 @@ export function WritePricesToDynamicTransferBuf(a) {
  */
 export function SwapSpaceAndSign(a) {
   // SwapSpaceAndSign (Z_01)
-  if (a === 0x24) {
+  if (!$br('Z_01:553', a !== 0x24)) {
     const x = a;
     a = ram[0x04];
     ram[0x04] = x;
@@ -79,16 +82,21 @@ export function SwapSpaceAndSign(a) {
 export function CopyPriceListTemplate() {
   // CopyPriceListTemplate (Z_01)
   const t = table(bus.rom, 'PriceListTemplateTransferBuf');
-  for (let y = 0x10; y >= 0; y--) ram[DynTileBuf + y] = t.byte(y);
+  for (let y = 0x10; ; y--) {
+    $pxa('Z_01:564', t.addr, y);
+    ram[DynTileBuf + y] = t.byte(y);
+    if (!$br('Z_01:567', y - 1 >= 0)) break;
+  }
 }
 
 /** UpdateCavePersonState_HintOrMoneyGame (Z_01): state 5 (hint, moblin giveaway, money game). */
 export function UpdateCavePersonState_HintOrMoneyGame() {
   // UpdateCavePersonState_HintOrMoneyGame (Z_01)
-  if (ram[CaveFlags] & 0x10) {
+  if (!$br('Z_01:868', (ram[CaveFlags] & 0x10) === 0)) {
     // Hint: selector by cave type ($75: first set) and the chosen item.
-    let a = ram[ObjType + 1] === 0x75 ? 0x00 : 0x03;
+    let a = $br('Z_01:875', ram[ObjType + 1] === 0x75) ? 0x00 : 0x03;
     const y = (a + ram[CaveChosenIndex]) & 0xff;
+    $pxa('Z_01:886', label('HintCaveTextSelectors0').addr, y);
     ram[PersonTextSelector] = table(bus.rom, 'HintCaveTextSelectors0').byte(y);
     ram[PersonTextPtr] = table(bus.rom, 'TextboxLineAddrsLo').byte(2);
     ram[PersonTextIndex] = 0x00;
@@ -96,7 +104,7 @@ export function UpdateCavePersonState_HintOrMoneyGame() {
     return CueTransferBufAndAdvanceState(0x1e); // blank textbox lines
   }
   // @HandleMoneyGameOrGiveaway
-  if (ram[ObjType + 1] >= 0x7b) {
+  if (!$br('Z_01:906', ram[ObjType + 1] < 0x7b)) {
     // A moblin giving away money.
     CopyPriceListTemplate();
     WritePricesToDynamicTransferBuf(0x24); // a space instead of "X"
@@ -106,18 +114,23 @@ export function UpdateCavePersonState_HintOrMoneyGame() {
     return PostCredit(ram[CavePrices + 1]);
   }
   // @HandleMoneyGame
-  if (ram[InvRupees] < 0x0a) return; // L493A_Exit
+  if ($br('Z_01:931', ram[InvRupees] < 0x0a)) return; // L493A_Exit
   ram[Tune0Request] = 0x08;
-  for (let y = 0x02; y >= 0; y--) ram[CavePrices + y] = ram[MoneyGameAmounts + y];
+  for (let y = 0x02; ; y--) {
+    $pxa('Z_01:938', MoneyGameAmounts, y);
+    ram[CavePrices + y] = ram[MoneyGameAmounts + y];
+    if (!$br('Z_01:941', y - 1 >= 0)) break;
+  }
   WritePricesTransferBuf();
   ram[ObjState + 1] = 0x08;
   PrependSignToPrice(ram[MoneyGameAmounts + 0], 0x01);
   PrependSignToPrice(ram[MoneyGameAmounts + 1], 0x05);
   PrependSignToPrice(ram[MoneyGameAmounts + 2], 0x09);
   const x = ram[CaveChosenIndex];
+  $pxa('Z_01:962', MoneyGameAmounts, x);
   const a = ram[MoneyGameAmounts + x];
-  if (a === 0x14) return PostCredit(a);
-  if (a !== 0x32) return PostDebit(a);
+  if ($br('Z_01:964', a === 0x14)) return PostCredit(a);
+  if ($br('Z_01:966', a !== 0x32)) return PostDebit(a);
   return PostCredit(a); // falls through
 }
 
@@ -140,6 +153,6 @@ export function PostDebit(a) {
 export function PrependSignToPrice(a, y) {
   // PrependSignToPrice (Z_01)
   let x = 0x64; // "+"
-  if (a !== 0x14 && a !== 0x32) x = 0x62; // "-"
+  if (!$br('Z_01:994', a === 0x14) && !$br('Z_01:996', a === 0x32)) x = 0x62; // "-"
   ram[DynTileBuf + 4 + y] = x;
 }

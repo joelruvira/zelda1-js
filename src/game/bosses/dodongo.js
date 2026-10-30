@@ -17,13 +17,14 @@ import { ResetObjState } from '../weapons/sword.js';
 import { CheckMonsterCollisions, GetObjectMiddle, CheckMonsterSwordCollision } from '../combat/collisions.js';
 import { Anim_SetSpriteDescriptorAttributes } from '../draw/sprites.js';
 import { Anim_FetchObjPosForSpriteDescriptor, DrawObjectMirrored, DrawObjectNotMirrored } from '../draw/anim.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** InitDodongo (Z_04). X = boss: roar, face left or right at random. */
 export function InitDodongo(x) {
   // InitDodongo (Z_04)
   ram[SampleRequest] = 0x20; // Dodongo/Gohma roar
   let y = 0x01;
-  if (ram[Random + x] >= 0x80) y++;
+  if (!$br('Z_04:4907', ram[Random + x] < 0x80)) y++;
   ram[ObjDir + x] = y;
   return y;
 }
@@ -51,7 +52,7 @@ export function UpdateDodongoState(x) {
 export function UpdateDodongoState0_Move(x) {
   // UpdateDodongoState0_Move (Z_04)
   let y = 0x00;
-  if ((ram[ObjDir + x] & 0x0d) !== 0) {
+  if (!$br('Z_04:5889', (ram[ObjDir + x] & 0x0d) === 0)) {
     ram[ObjX + x] = ram[ObjX + x] + 0x10;
     y = 0xf0;
   }
@@ -61,21 +62,23 @@ export function UpdateDodongoState0_Move(x) {
   Wanderer_TargetPlayer(x);
   const a = (offset + ram[ObjX + x]) & 0xff; // PLA / CLC / ADC
   ram[ObjX + x] = a;
-  if (a < 0x20) ram[ObjDir + x] = 0x01;
+  if (!$br('Z_04:5914', a >= 0x20)) ram[ObjDir + x] = 0x01;
 }
 
 /** UpdateDodongoState2_Stunned (Z_04). X = boss: stun timer 0 (or >= $81) -> $20; 1 -> back to state 0. */
 export function UpdateDodongoState2_Stunned(x) {
   // UpdateDodongoState2_Stunned (Z_04)
+  $pxa('Z_04:5925', ObjStunTimer, x);
   const y = (ram[ObjStunTimer + x] - 1) & 0xff;
-  if (y === 0) return UpdateDodongoState1_Bloated_Sub_End(x);
-  if (y & 0x80) ram[ObjStunTimer + x] = 0x20;
+  if ($br('Z_04:5927', y === 0)) return UpdateDodongoState1_Bloated_Sub_End(x);
+  if (!$br('Z_04:5928', !(y & 0x80))) ram[ObjStunTimer + x] = 0x20;
 }
 
 /** UpdateDodongoState1_Bloated (Z_04). X = boss: TableJump by the bloated substate. */
 export function UpdateDodongoState1_Bloated(x) {
   // UpdateDodongoState1_Bloated (Z_04)
   const wait = () => UpdateDodongoState1_Bloated_Sub_Wait(x);
+  $pxa('Z_04:5935', Dodongo_ObjBloatedSubstate, x);
   return tableJump(label('UpdateDodongoState1_Bloated_JumpTable').addr, ram[Dodongo_ObjBloatedSubstate + x], [
     wait, wait, wait,
     () => UpdateDodongoState1_Bloated_Sub_Die(x),
@@ -90,20 +93,27 @@ export function UpdateDodongoState1_Bloated(x) {
  */
 export function UpdateDodongoState1_Bloated_Sub_Wait(x) {
   // UpdateDodongoState1_Bloated_Sub_Wait (Z_04)
+  $pxa('Z_04:5950', Dodongo_ObjBloatedTimer, x);
   let y = (ram[Dodongo_ObjBloatedTimer + x] - 1) & 0xff;
-  if (y === 0) {
+  if ($br('Z_04:5952', y === 0)) {
     // @AdvanceSubstate
     ram[Dodongo_ObjBloatedSubstate + x]++;
-    if (ram[Dodongo_ObjBloatedSubstate + x] >= 0x02 && ram[Dodongo_ObjBombHits + x] < 0x02) {
-      ram[Dodongo_ObjBloatedSubstate + x] = 0x04;
+    $pxa('Z_04:5981', Dodongo_ObjBloatedSubstate, x);
+    if (!$br('Z_04:5983', ram[Dodongo_ObjBloatedSubstate + x] < 0x02)) {
+      $pxa('Z_04:5994', Dodongo_ObjBombHits, x);
+      if (!$br('Z_04:5996', ram[Dodongo_ObjBombHits + x] >= 0x02)) ram[Dodongo_ObjBloatedSubstate + x] = 0x04;
     }
     return L_Dodongo_DecrementBloatedTimer(x);
   }
-  if (!(y & 0x80)) return L_Dodongo_DecrementBloatedTimer(x);
+  if ($br('Z_04:5953', !(y & 0x80))) return L_Dodongo_DecrementBloatedTimer(x);
+  $pxa('Z_04:5956', Dodongo_ObjBloatedSubstate, x);
   y = ram[Dodongo_ObjBloatedSubstate + x];
-  ram[Dodongo_ObjBloatedTimer + x] = table(bus.rom, 'DodongoBloatedWaitTimes').byte(y);
-  if (y !== 0x00) return L_Dodongo_DecrementBloatedTimer(x);
+  const waits = table(bus.rom, 'DodongoBloatedWaitTimes');
+  $pxa('Z_04:5957', waits.addr, y);
+  ram[Dodongo_ObjBloatedTimer + x] = waits.byte(y);
+  if ($br('Z_04:5962', y !== 0x00)) return L_Dodongo_DecrementBloatedTimer(x);
   ram[ObjState + 0x10] = 0x00; // deactivate the bomb in slot $10
+  $pxa('Z_04:5970', Dodongo_ObjBombHits, x);
   ram[Dodongo_ObjBombHits + x] = ram[Dodongo_ObjBombHits + x] + 0x01;
   return L_Dodongo_DecrementBloatedTimer(x);
 }
@@ -137,13 +147,15 @@ export function UpdateDodongoState1_Bloated_Sub_End(x) {
 export function Dodongo_CheckCollisions(x) {
   // Dodongo_CheckCollisions (Z_04)
   Dodongo_CheckCollisionsStandardSize(x);
-  if (ram[ObjInvincibilityTimer + x] === 0) {
-    if (ram[ObjDir + x] >= 0x04) return; // L11989_Exit
+  $pxa('Z_04:6019', ObjInvincibilityTimer, x);
+  if (!$br('Z_04:6020', ram[ObjInvincibilityTimer + x] !== 0)) {
+    if ($br('Z_04:6025', ram[ObjDir + x] >= 0x04)) return; // L11989_Exit
     const savedX = ram[ObjX + x]; // PHA
     ram[ObjX + x] = savedX + 0x10;
     Dodongo_CheckCollisionsStandardSize(x);
     ram[ObjX + x] = savedX; // PLA
-    if (ram[ObjInvincibilityTimer + x] === 0) return; // L11989_Exit
+    $pxa('Z_04:6041', ObjInvincibilityTimer, x);
+    if ($br('Z_04:6042', ram[ObjInvincibilityTimer + x] === 0)) return; // L11989_Exit
   }
   // @Die
   UpdateDodongoState1_Bloated_Sub_Die(x);
@@ -164,7 +176,7 @@ export function Dodongo_CheckCollisionsStandardSize(x) {
   // Dodongo_CheckCollisionsStandardSize (Z_04)
   ram[ObjInvincibilityMask + x] = 0xff;
   CheckMonsterCollisions(x);
-  if (ram[ObjState + x] !== 0x02) return; // L11989_Exit
+  if ($br('Z_04:6063', ram[ObjState + x] !== 0x02)) return; // L11989_Exit
   ram[ObjInvincibilityMask + x] = 0xfe;
   GetObjectMiddle(x);
   return CheckMonsterSwordCollision(x, 0x0d);
@@ -177,20 +189,23 @@ export function Dodongo_CheckCollisionsStandardSize(x) {
  */
 export function Dodongo_CheckBombHit(x) {
   // Dodongo_CheckBombHit (Z_04)
-  if (ram[ObjState + x] !== 0) return; // @Exit
+  if ($br('Z_04:6088', ram[ObjState + x] !== 0)) return; // @Exit
   cpu.c = 0;
   let a = cpu.adc(ram[ObjX + x], 0x08);
   cpu.cmp(ram[ObjDir + x], 0x04);
-  if (!cpu.c) a = cpu.adc(a, 0x08);
+  if (!$br('Z_04:6097', cpu.c)) a = cpu.adc(a, 0x08);
   ram[0x00] = a;
   ram[0x01] = cpu.adc(ram[ObjY + x], 0x08);
+  $pxa('Z_04:6111', ObjX, 0x10);
   ram[0x02] = cpu.adc(ram[ObjX + 0x10], 0x08);
+  $pxa('Z_04:6116', ObjY, 0x10);
   ram[0x03] = cpu.adc(ram[ObjY + 0x10], 0x08);
+  $pxa('Z_04:6121', ObjState, 0x10);
   a = ram[ObjState + 0x10];
-  if (a === 0) return; // no bomb
-  if (a === 0x12) return Dodongo_TryEatBomb(x);
-  if (a >= 0x20) return; // it is a fire
-  if (Dodongo_IsBombInRange(0x00) !== 0) return;
+  if ($br('Z_04:6122', a === 0)) return; // no bomb
+  if ($br('Z_04:6127', a === 0x12)) return Dodongo_TryEatBomb(x);
+  if ($br('Z_04:6131', a >= 0x20)) return; // it is a fire
+  if ($br('Z_04:6138', Dodongo_IsBombInRange(0x00) !== 0)) return;
   ram[ObjState + x] = 0x02; // stunned
 }
 
@@ -201,7 +216,7 @@ export function Dodongo_CheckBombHit(x) {
  */
 export function Dodongo_TryEatBomb(x) {
   // Dodongo_TryEatBomb (Z_04)
-  if (Dodongo_IsBombInRange(0x01) !== 0) return;
+  if ($br('Z_04:6153', Dodongo_IsBombInRange(0x01) !== 0)) return;
   const neg = table(bus.rom, 'DodongoMouthNegativeLimits0');
   const pos = table(bus.rom, 'DodongoMouthPositiveLimits0');
   ram[0x00] = 0x01;
@@ -209,12 +224,14 @@ export function Dodongo_TryEatBomb(x) {
   let a = ram[0x04];
   do {
     // @LoopLimit
-    if ((a - neg.byte(y)) & 0x80) return; // CMP / BMI
-    if (!((a - pos.byte(y)) & 0x80)) return; // CMP / BPL
+    $pxa('Z_04:6178', neg.addr, y);
+    if ($br('Z_04:6179', ((a - neg.byte(y)) & 0x80) !== 0)) return; // CMP / BMI
+    $pxa('Z_04:6180', pos.addr, y);
+    if ($br('Z_04:6181', !((a - pos.byte(y)) & 0x80))) return; // CMP / BPL
     y = (y + 0x0a) & 0xff; // the vertical limits (...Limits1)
     a = ram[0x05];
     ram[0x00] = (ram[0x00] - 1) & 0xff;
-  } while (!(ram[0x00] & 0x80));
+  } while ($br('Z_04:6195', !(ram[0x00] & 0x80)));
   ram[ObjState + x]++;
   ram[ObjState + 0x10] = 0x00;
   ram[Dodongo_ObjBloatedSubstate + x] = 0x00;
@@ -227,16 +244,23 @@ export function Dodongo_TryEatBomb(x) {
  */
 export function Dodongo_IsBombInRange(y) {
   // Dodongo_IsBombInRange (Z_04)
-  ram[0x06] = table(bus.rom, 'DodongoBombPositiveLimits').byte(y);
-  ram[0x07] = table(bus.rom, 'DodongoBombNegativeLimits').byte(y);
+  const posL = table(bus.rom, 'DodongoBombPositiveLimits');
+  const negL = table(bus.rom, 'DodongoBombNegativeLimits');
+  $pxa('Z_04:6232', posL.addr, y);
+  ram[0x06] = posL.byte(y);
+  $pxa('Z_04:6234', negL.addr, y);
+  ram[0x07] = negL.byte(y);
   ram[0x08] = 0x03;
-  for (y = 0x01; y >= 0; y--) {
+  for (y = 0x01; ;) {
     // @LoopAxis
+    $pxa('Z_04:6250', 0x0002, y);
     const a = (ram[0x00 + y] - ram[0x02 + y]) & 0xff;
-    if (!((a - ram[0x06]) & 0x80)) continue; // BPL
-    if ((a - ram[0x07]) & 0x80) continue; // BMI
-    ram[0x04 + y] = a;
-    ram[0x08] >>= 1;
+    if (!$br('Z_04:6255', !((a - ram[0x06]) & 0x80)) && !$br('Z_04:6257', ((a - ram[0x07]) & 0x80) !== 0)) {
+      ram[0x04 + y] = a;
+      ram[0x08] >>= 1;
+    }
+    y--;
+    if (!$br('Z_04:6270', y >= 0)) break;
   }
   return ram[0x08];
 }
@@ -253,19 +277,20 @@ export function Dodongo_Draw(x) {
   let y = ram[ObjState + x];
   let a;
   let walking = true;
-  if (y === 0) {
+  if ($br('Z_04:6311', y === 0)) {
     a = 0x08; // @DrawWalkingFast
   } else {
     a = 0x20;
     y = (y - 1) & 0xff;
-    if (y === 0) {
+    if (!$br('Z_04:6317', y !== 0)) {
       // Bloated.
+      $pxa('Z_04:6322', Dodongo_ObjBloatedSubstate, x);
       y = ram[Dodongo_ObjBloatedSubstate + x];
-      if (y === 0) {
+      if ($br('Z_04:6323', y === 0)) {
         a = 0x08; // @DrawWalkingFast
-      } else if (y === 0x02 || y === 0x03) {
+      } else if ($br('Z_04:6328', y === 0x02) || $br('Z_04:6330', y === 0x03)) {
         // @DrawFaded
-        if ((ram[FrameCounter] & 0x02) === 0) return; // L11B00_Exit
+        if ($br('Z_04:6347', (ram[FrameCounter] & 0x02) === 0)) return; // L11B00_Exit
         y = ram[0x00];
         walking = false;
       } else {
@@ -277,21 +302,25 @@ export function Dodongo_Draw(x) {
   if (walking) {
     // @DrawWalking
     y = ram[0x00];
-    if ((a & ram[FrameCounter]) !== 0) y = (y + 0x05) & 0xff;
+    if (!$br('Z_04:6358', (a & ram[FrameCounter]) === 0)) y = (y + 0x05) & 0xff;
   }
   // @PrepareToDraw
   const images = table(bus.rom, 'DodongoFrameImages');
+  const hflips = table(bus.rom, 'DodongoFrameHFlips');
   Anim_FetchObjPosForSpriteDescriptor(x);
   const index = y; // TYA / PHA
-  ram[0x0f] = table(bus.rom, 'DodongoFrameHFlips').byte(y);
+  $pxa('Z_04:6374', hflips.addr, y);
+  ram[0x0f] = hflips.byte(y);
+  $pxa('Z_04:6376', images.addr, y);
   a = images.byte(y);
-  if (a === 0x07 || a === 0x09) DrawObjectMirrored(a, x);
+  if ($br('Z_04:6381', a === 0x07) || !$br('Z_04:6383', a !== 0x09)) DrawObjectMirrored(a, x);
   else DrawObjectNotMirrored(a, x); // @DrawLeftSide
   // @DrawRightSide
   y = index;
-  if ((ram[ObjDir + x] & 0x03) === 0) return; // L11B00_Exit
+  if ($br('Z_04:6399', (ram[ObjDir + x] & 0x03) === 0)) return; // L11B00_Exit
   ram[0x00] = ram[ObjX + x] + 0x10;
   Anim_SetSpriteDescriptorLevelPaletteRow();
+  $pxa('Z_04:6427', images.addr, y);
   return DrawObjectNotMirrored(images.byte(y) ^ 0x01, x);
 }
 

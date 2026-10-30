@@ -6,7 +6,7 @@
 
 import { ram } from '../../core/ram.js';
 import { bus } from '../../core/bus.js';
-import { table } from '../../core/rom.js';
+import { table, label } from '../../core/rom.js';
 import { switchBank } from '../../core/asm.js';
 import {
   InvBombs, ObjState, ObjTimer, Tune0Request, CurPpuMask_2001, CurLevel, GameMode, ObjX, ObjY,
@@ -20,6 +20,7 @@ import { FindDoorTypeByDoorBit } from '../world/doors.js';
 import { PlaceWeaponForPlayerStateAndAnimAndWeaponState } from './wield.js';
 import { UpdateFire } from './fire.js';
 import { ResetObjState } from './sword.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /**
  * WieldBomb (Z_01): sets a bomb (state $11) in slot $10 or $11 (a fire there is replaced), at most
@@ -27,19 +28,20 @@ import { ResetObjState } from './sword.js';
  */
 export function WieldBomb() {
   // WieldBomb (Z_01)
-  if (ram[InvBombs] === 0) return; // no bombs
+  if ($br('Z_01:3856', ram[InvBombs] === 0)) return; // no bombs
   let x = 0x10;
   let a = ram[ObjState + x];
-  if (a !== 0 && (a & 0xf0) === 0x10) {
+  if (!$br('Z_01:3863', a === 0) && !$br('Z_01:3866', (a & 0xf0) !== 0x10)) {
     // A bomb in slot $10: look at slot $11.
     x++;
     a = ram[ObjState + x];
-    if (a !== 0 && (a & 0xf0) === 0x10) return; // L69AB_Exit: two bombs
+    if (!$br('Z_01:3872', a === 0) && $br('Z_01:3875', (a & 0xf0) === 0x10)) return; // L69AB_Exit: two bombs
   }
   // @FoundSlot: if the other slot has a bomb that's not detonating yet (state < $13), return.
   const y = x ^ 0x01;
+  $pxa('Z_01:3884', ObjState, y);
   a = ram[ObjState + y];
-  if (a !== 0 && a < 0x13) return; // L69AB_Exit
+  if (!$br('Z_01:3885', a === 0) && $br('Z_01:3887', a < 0x13)) return; // L69AB_Exit
   // @Activate
   ram[InvBombs]--;
   ram[Tune0Request] = 0x20; // "set a bomb" tune
@@ -53,12 +55,12 @@ export function WieldBomb() {
  */
 export function UpdateBombFlashEffect(x) {
   // UpdateBombFlashEffect (Z_01)
-  if (ram[ObjState + x] !== 0x13) return; // @Exit
+  if ($br('Z_01:4090', ram[ObjState + x] !== 0x13)) return; // @Exit
   let a = ram[CurPpuMask_2001] >> 1; // LSR: drop the grayscale bit
   const y = ram[ObjTimer + x];
-  if (y === 0x16 || y === 0x11) {
+  if ($br('Z_01:4106', y === 0x16) || !$br('Z_01:4108', y !== 0x11)) {
     a = ((a << 1) | 0x01) & 0xff; // ROL with C = 1 (from CPY equal)
-  } else if (y === 0x12 || y === 0x0d) {
+  } else if ($br('Z_01:4116', y === 0x12) || !$br('Z_01:4118', y !== 0x0d)) {
     a = (a << 1) & 0xff; // @Clear: ASL
   } else {
     return; // @Exit
@@ -70,8 +72,8 @@ export function UpdateBombFlashEffect(x) {
 export function UpdateBombOrFire(x) {
   // UpdateBombOrFire (Z_07)
   const a = ram[ObjState + x];
-  if (a === 0) return; // L1F95F_Exit
-  if ((a & 0xf0) === 0x10) return UpdateBomb(x);
+  if ($br('Z_07:4795', a === 0)) return; // L1F95F_Exit
+  if ($br('Z_07:4800', (a & 0xf0) === 0x10)) return UpdateBomb(x);
   return UpdateFire(x);
 }
 
@@ -80,14 +82,15 @@ export function UpdateBombOrFire(x) {
  * one comes from BombTimes by minor state and the state advances (3: blast sound, 5: gone).
  */
 function UpdateBomb(x) {
-  if (ram[ObjTimer + x] !== 0) return DrawBomb(x);
+  if ($br('Z_07:4808', ram[ObjTimer + x] !== 0)) return DrawBomb(x);
   const y = ram[ObjState + x] & 0x0f;
+  $pxa('Z_07:4815', label('BombTimes').addr - 1, y);
   ram[ObjTimer + x] = table(bus.rom, 'BombTimes').byte(y - 1); // BombTimes-1, Y
   ram[ObjState + x]++;
   let a = ram[ObjState + x] & 0x0f; // PHA
-  if (a === 0x03) PlayEffect(0x10); // blast
+  if (!$br('Z_07:4824', a !== 0x03)) PlayEffect(0x10); // blast
   // @CheckState5 (PLA)
-  if (a !== 0x05) return Bomb_CheckState4(a, x);
+  if ($br('Z_07:4833', a !== 0x05)) return Bomb_CheckState4(a, x);
   a = ResetObjState(x);
   ram[ObjTimer + x] = a;
   // L1F95F_Exit
@@ -99,26 +102,28 @@ function UpdateBomb(x) {
  * bombable wall (TriggeredDoorCmd 6). Then draws (DrawBomb).
  */
 function Bomb_CheckState4(a, x) {
-  if (a !== 0x04) return DrawBomb(x);
-  if (ram[CurLevel] === 0) return DrawBomb(x); // OW: rock walls have their own tile object
-  if (ram[GameMode] === 0x09) return DrawBomb(x); // not in cellars
+  if ($br('Z_07:4843', a !== 0x04)) return DrawBomb(x);
+  if ($br('Z_07:4849', ram[CurLevel] === 0)) return DrawBomb(x); // OW: rock walls have their own tile object
+  if ($br('Z_07:4854', ram[GameMode] === 0x09)) return DrawBomb(x); // not in cellars
   const hotX = table(bus.rom, 'BombableWallHotspotsX');
   const hotY = table(bus.rom, 'BombableWallHotspotsY');
-  for (let y = 0x03; y >= 0; y--) {
+  for (let y = 0x03; ; y--) {
     // @LoopHotspot
-    if (Abs((hotX.byte(y) - ram[ObjX + x]) & 0xff) >= 0x18) continue;
-    if (Abs((hotY.byte(y) - ram[ObjY + x]) & 0xff) >= 0x18) continue;
-    a = reverseDirections(y);
+    if ($br('Z_07:4861', y < 0)) return DrawBomb(x); // no hotspot near
+    $pxa('Z_07:4865', hotX.addr, y);
+    if ($br('Z_07:4870', Abs((hotX.byte(y) - ram[ObjX + x]) & 0xff) >= 0x18)) continue;
+    $pxa('Z_07:4874', hotY.addr, y);
+    if ($br('Z_07:4879', Abs((hotY.byte(y) - ram[ObjY + x]) & 0xff) >= 0x18)) continue;
+    a = reverseDirections(y, 'Z_07:4882');
     ram[0x02] = a; // the hotspot's direction
-    if (a & ram[CurOpenedDoors]) return DrawBomb(x); // already opened
-    if (ram[TriggeredDoorCmd] !== 0) return DrawBomb(x); // already triggered
+    if ($br('Z_07:4887', (a & ram[CurOpenedDoors]) !== 0)) return DrawBomb(x); // already opened
+    if ($br('Z_07:4889', ram[TriggeredDoorCmd] !== 0)) return DrawBomb(x); // already triggered
     switchBank(5);
-    if (FindDoorTypeByDoorBit() !== 0x04) return DrawBomb(x); // not a bombable wall
+    if ($br('Z_07:4896', FindDoorTypeByDoorBit() !== 0x04)) return DrawBomb(x); // not a bombable wall
     ram[TriggeredDoorCmd] = 0x06;
     ram[TriggeredDoorDir] = ram[0x02];
     return DrawBomb(x); // falls through
   }
-  return DrawBomb(x); // BMI DrawBomb: no hotspot near
 }
 
 /**
@@ -128,7 +133,7 @@ function Bomb_CheckState4(a, x) {
 function DrawBomb(x) {
   Anim_FetchObjPosForSpriteDescriptor(x);
   DrawBombOrCloudAt(x);
-  if ((ram[ObjState + x] & 0x0f) === 0x02) return; // a bomb: L1F95F_Exit
+  if ($br('Z_07:4913', (ram[ObjState + x] & 0x0f) === 0x02)) return; // a bomb: L1F95F_Exit
   return DrawOtherBombClouds(x);
 }
 
@@ -165,11 +170,14 @@ export function DrawOtherBombClouds(x) {
   // DrawOtherBombClouds (Z_07)
   const offY = table(bus.rom, 'BombCloudOffsetsY1');
   const offX = table(bus.rom, 'BombCloudOffsetsX1');
-  for (let y = 0x02; y >= 0; y--) {
+  for (let y = 0x02; ; y--) {
     // @LoopCloud: odd frames use the second set (6 bytes further).
-    const i = ram[FrameCounter] & 0x01 ? y + 0x06 : y;
+    const i = !$br('Z_07:4980', (ram[FrameCounter] & 0x01) === 0) ? y + 0x06 : y;
+    $pxa('Z_07:4990', offY.addr, i);
     ram[0x01] = ram[ObjY + x] + offY.byte(i);
+    $pxa('Z_07:4996', offX.addr, i);
     ram[0x00] = ram[ObjX + x] + offX.byte(i);
     DrawBombOrCloudNoFlashing(x);
+    if (!$br('Z_07:5006', y - 1 >= 0)) break;
   }
 }

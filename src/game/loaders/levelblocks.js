@@ -6,6 +6,7 @@
 import { ram, cpu, word } from '../../core/ram.js';
 import { read, write } from '../../core/bus.js';
 import { GameSubmode } from '../../core/vars.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** FetchLevelBlockDestInfo (Z_06): [$02:03] = $687E (destination), [$04:05] = $6B7D (end). */
 export function FetchLevelBlockDestInfo() {
@@ -35,8 +36,9 @@ export function CopyBlock() {
   // CopyBlock (Z_06)
   const y = 0x00;
   for (;;) {
+    $pxa('Z_06:175', word(0x00), y);
     write((word(0x02) + y) & 0xffff, read((word(0x00) + y) & 0xffff)); // LDA ($00), Y / STA ($02), Y
-    if (ram[0x02] === ram[0x04] && ram[0x03] === ram[0x05]) {
+    if (!$br('Z_06:179', ram[0x02] !== ram[0x04]) && !$br('Z_06:182', ram[0x03] !== ram[0x05])) {
       ram[GameSubmode]++;
       return;
     }

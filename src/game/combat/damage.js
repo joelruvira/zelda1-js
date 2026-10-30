@@ -2,6 +2,7 @@
 // X = monster slot, Y = weapon slot, [07] = damage points, [09] = damage type.
 
 import { ram } from '../../core/ram.js';
+import { $br, $pxa } from '../../core/timing.js';
 import {
   ObjInvincibilityMask, ObjInvincibilityTimer, ObjType, ObjDir, ObjHP, ObjStunTimer,
   Tune0Request, WorldKillCount, HelpDropCount, HelpDropValue,
@@ -18,19 +19,23 @@ import { BeginShove } from './link-harm.js';
  */
 export function HandleMonsterWeaponCollision(x, y) {
   // HandleMonsterWeaponCollision (Z_01)
-  if (ram[ObjInvincibilityMask + x] & ram[0x09]) return L_PlayParrySoundForDamageType();
+  $pxa('Z_01:5924', ObjInvincibilityMask, x);
+  if ($br('Z_01:5926', (ram[ObjInvincibilityMask + x] & ram[0x09]) !== 0)) return L_PlayParrySoundForDamageType();
+  $pxa('Z_01:5930', ObjType, x);
   const t = ram[ObjType + x];
-  if (t === 0x33 || t === 0x34) return Gohma_HandleWeaponCollision(x, y);
+  if ($br('Z_01:5932', t === 0x33) || !$br('Z_01:5934', t !== 0x34)) return Gohma_HandleWeaponCollision(x, y);
   // @CheckZolVire
-  if (t === 0x13 || t === 0x12) {
-    if (y === 0x0f) return DealDamage(x);
-    ram[ObjDir + x] = ram[ObjDir + y];
+  if ($br('Z_01:5944', t === 0x13) || !$br('Z_01:5946', t !== 0x12)) {
+    if ($br('Z_01:5949', y === 0x0f)) return DealDamage(x);
+    $pxa('Z_01:5950', ObjDir, y);
+    ram[(ObjDir + x) & 0xff] = ram[ObjDir + y];
     return DealDamage(x);
   }
   // @CheckDarknut
-  if (t === 0x0b || t === 0x0c) {
-    const d = ram[ObjDir + y] | ram[ObjDir + x];
-    if (d === 0x0c || d === 0x03) return L_PlayParrySoundForDamageType();
+  if ($br('Z_01:5958', t === 0x0b) || !$br('Z_01:5960', t !== 0x0c)) {
+    $pxa('Z_01:5962', ObjDir, y);
+    const d = ram[ObjDir + y] | ram[(ObjDir + x) & 0xff];
+    if ($br('Z_01:5965', d === 0x0c) || $br('Z_01:5967', d === 0x03)) return L_PlayParrySoundForDamageType();
   }
   return DealDamage(x); // falls through
 }
@@ -39,17 +44,18 @@ export function HandleMonsterWeaponCollision(x, y) {
 export function DealDamage(x) {
   // DealDamage (Z_01)
   ram[Tune0Request] = 0x02;
+  $pxa('Z_01:5976', ObjHP, x);
   const hp = ram[ObjHP + x];
-  if (hp < ram[0x07]) return HandleMonsterDied(x);
+  if ($br('Z_01:5978', hp < ram[0x07])) return HandleMonsterDied(x);
   ram[ObjHP + x] = hp - ram[0x07];
-  if (ram[ObjHP + x] === 0) return HandleMonsterDied(x);
+  if ($br('Z_01:5982', ram[ObjHP + x] === 0)) return HandleMonsterDied(x);
 }
 
 /** L_PlayParrySoundForDamageType (Z_01, part of HandleMonsterWeaponCollision): not for fire/bombs. */
 export function L_PlayParrySoundForDamageType() {
   // L_PlayParrySoundForDamageType (Z_01)
   const a = ram[0x09];
-  if (a === 0x20 || a === 0x08) return; // fire, bomb
+  if ($br('Z_01:5991', a === 0x20) || $br('Z_01:5993', a === 0x08)) return; // fire, bomb
   return PlayParryTune();
 }
 
@@ -60,13 +66,13 @@ export function L_PlayParrySoundForDamageType() {
 export function HandleMonsterDied(x) {
   // HandleMonsterDied (Z_01)
   ram[WorldKillCount]++;
-  if (ram[HelpDropCount] < 0x0a) {
+  if (!$br('Z_01:6003', ram[HelpDropCount] >= 0x0a)) {
     ram[HelpDropCount]++;
-    if (ram[HelpDropCount] === 0x0a && ram[0x09] === 0x08) ram[HelpDropValue]++;
+    if (!$br('Z_01:6010', ram[HelpDropCount] !== 0x0a) && !$br('Z_01:6013', ram[0x09] !== 0x08)) ram[HelpDropValue]++;
   }
   // @SetDyingMetastate
   UpdateDeadDummy(x);
-  ram[ObjStunTimer + x] = 0x00;
+  ram[(ObjStunTimer + x) & 0xff] = 0x00; // zp,X
   return ResetShoveInfoAndInvincibilityTimer(0x00, x); // falls through
 }
 
@@ -84,10 +90,12 @@ export function ResetShoveInfoAndInvincibilityTimer(a, x) {
  */
 export function ParryOrShove(x, y) {
   // ParryOrShove (Z_01)
+  $pxa('Z_01:6318', ObjType, x);
   const t = ram[ObjType + x];
-  if (t === 0x0b || t === 0x0c) {
-    const d = ram[ObjDir + y] | ram[ObjDir + x];
-    if (d === 0x0c || d === 0x03) return PlayParryTune();
+  if ($br('Z_01:6320', t === 0x0b) || !$br('Z_01:6322', t !== 0x0c)) {
+    $pxa('Z_01:6324', ObjDir, y);
+    const d = ram[ObjDir + y] | ram[(ObjDir + x) & 0xff];
+    if ($br('Z_01:6327', d === 0x0c) || $br('Z_01:6329', d === 0x03)) return PlayParryTune();
   }
   return BeginShove(x);
 }

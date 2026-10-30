@@ -282,7 +282,7 @@ node tools/oracle/battery.mjs movie <f.zmv>          # uno solo (--sram f.sav pa
 node tools/oracle/battery.mjs routines --n 5000 --scale 150 --seeds 0,1,2,3,4,5
 node tools/oracle/battery.mjs fuzz-gen [--frames 24000] [--only fuzz-ow]
 node tools/oracle/battery.mjs boot                   # arranque con SRAM vacía / basura / checksum o marcas rotas
-BATTERY=1 node --test tests/oracle/battery.test.mjs  # movies + boot como test (lento)
+BATTERY=1 node --test tests/oracle/battery.test.mjs  # movies (0 px exigido) + boot como test (lento)
 ```
 
 * **movies**: oráculo y port puro en *lockstep*; en **cada** frame compara RAM y SRAM (rangos de
@@ -295,6 +295,15 @@ BATTERY=1 node --test tests/oracle/battery.test.mjs  # movies + boot como test (
   en zona visible, p. ej. frame 121 tras Start en el título) y `DEFECT` (cualquier otra cosa: código 1).
   Algunos frames no tienen imagen en el oráculo (la NMI siguiente empieza antes de que se complete otro
   frame de vídeo, p. ej. las NMIs anidadas): se listan en `noFb`.
+  El port corre con el rastreador de ciclos (`--timing jsnes` por defecto, docs/TIMING.md §10). Además de
+  la imagen tras cada NMI se compara **cada frame de vídeo** (hash de las filas 1-239 de cada imagen
+  completada, también las de lag dentro de una NMI larga) y el número total de frames de vídeo: campo
+  `video` del informe (`video D/N` en la línea de cada movie). `--require-zero` falla con cualquier px o
+  frame de vídeo distinto.
+* **Estado (2026-10-30)**: 72 movies, 799 997 frames: **0 frames distintos, 0 px, RAM/SRAM diff 0**, 0 de
+  809 870 frames de vídeo distintos; todas las clases de temporización (`split-63`, `late-write`, `lag`,
+  `nested-nmi`) a 0. `BATTERY=1 node --test tests/oracle/battery.test.mjs` exige 0 px y 0 frames de vídeo
+  distintos (unos 4 min en 12 núcleos).
 * **routines**: todos los tests rutina-contra-6502 de `tests/game` con `Pxx_N`/`W3_N`/`WAVE4_N`/`P04_N` = N,
   `ROUTINES_SCALE` (multiplica los estados de los tests por semillas: P01, P03, P11, P23-P25) y
   `ROUTINES_SEED` (desplaza todos los generadores aleatorios; 0 = los estados de siempre); los ficheros con
@@ -302,3 +311,121 @@ BATTERY=1 node --test tests/oracle/battery.test.mjs  # movies + boot como test (
 * **fuzz-gen**: `tests/oracle/movies/fuzz-*.zmv` = prefijo de un movie existente hasta un estado elegido
   (overworld, mazmorras, segunda vuelta, Gleeok de 4 cabezas, Ganon, Aquamentus) + 24 000 frames de juego
   semialeatorio (direcciones mantenidas, A/B, Start/Select ocasionales). Usan las `.sav` existentes.
+
+## Segundo oráculo: Mesen2 (`tools/oracle-mesen/`)
+
+Mesen2 (2.1.1, precisión de hardware: PPU por punto, frame impar corto, DMA del DMC de 1-4 ciclos) se usa
+**solo para pruebas**, como referencia a nivel de punto que jsnes no puede dar (`docs/TIMING.md` §4). Es
+nativo (no Node): se ejecuta en modo `--testrunner` (sin ventana, a máxima velocidad) con un script Lua que
+envía un registro por frame lógico a Node por una FIFO. No se sube al repo: vive en `reference/` (ignorado).
+
+### Instalación (una vez)
+
+1. Mesen2 2.1.1 macOS ARM64 de la release oficial (`SourMesen/Mesen2`), descomprimido en
+   `reference/mesen2-dl/app/Mesen.app` (otra ruta: variable `MESEN_APP`).
+2. SDL2: `MesenCore.dylib` enlaza `/opt/homebrew/opt/sdl2/lib/libSDL2-2.0.0.dylib` (el SDL2 de Homebrew).
+   Para no instalar nada en el sistema se usa el `SDL2.framework` de la release oficial **SDL2 2.32.8**
+   (`libsdl-org/SDL`, `SDL2-2.32.8.dmg`, sha256 `de07f71c…6fa0` verificado contra GitHub; la misma versión
+   con la que se compiló MesenCore), extraído en `reference/sdl2-dl/SDL2.framework`.
+3. `node tools/oracle-mesen/setup.mjs` (idempotente; `--check` solo comprueba):
+   * escribe `settings.json` **junto al ejecutable** (`Mesen.app/Contents/MacOS/`) → modo portable: toda la
+     configuración y los ficheros de Mesen quedan dentro de `reference/mesen2-dl`;
+   * copia `SDL2.framework` junto al ejecutable y reescribe en `MesenCore.dylib` la ruta de SDL2 a
+     `@loader_path/SDL2.framework/Versions/A/SDL2` (`install_name_tool` + firma ad hoc `codesign -s -`; la app
+     tiene `disable-library-validation`). El fichero queda de solo lectura para que Mesen, que reextrae sus
+     dependencias si cambian tamaño/fecha, no lo restaure. `DYLD_LIBRARY_PATH` no sirve: el ejecutable usa
+     *hardened runtime* sin `allow-dyld-environment-variables`.
+
+**Por qué se colgaba** `Mesen --testrunner rom script.lua`: sin ningún `settings.json` (ni portable ni en
+`~/Library/Application Support/Mesen2`), `Program.Main` abre el asistente de primera configuración (una
+ventana Avalonia) **antes** de mirar `--testrunner`, y espera para siempre. Esa primera ejecución dejó
+`~/Library/Application Support/Mesen2/` con las dylibs extraídas (sin `settings.json`); ya no se usa (la
+configuración portable tiene prioridad) y se puede borrar. Arreglado eso, faltaba SDL2 (punto 2). Otras
+notas del modo test (código de `UI/Utilities/TestRunner.cs`): `--timeout=<s>` (defecto 100 s),
+`--enablestdout` manda el log (y `print` de Lua) a stdout, `emu.stop(code)` fija el código de salida, la
+configuración no se guarda nunca (`DisableSaveSettings`). Lua necesita `Debug.ScriptWindow.AllowIoOsAccess`
+para `io.open`. El log de stdout incluye avisos `[CPU] Uninitialized memory read` del depurador: inofensivos.
+
+### Configuración (`mesenSettings()` en `lib/mesen.mjs`)
+
+| Ajuste | Valor | Motivo |
+|---|---|---|
+| `Nes.Region` | `Ntsc` | (la base de datos de Mesen también dice NesNtsc para esta ROM) |
+| `Nes.RamPowerOnState` | `AllZeros` | además el script escribe la RAM con el byte de `--power-on` (defecto `$00`, como jsnes) |
+| `Nes.RandomizeCpuPpuAlignment`, `RandomizeMapperPowerOnState` | `false` | determinismo: alineación CPU/PPU fija por defecto de Mesen (al cargar el script: ciclo de CPU 7, PPU línea 0 punto 25, tras la secuencia de reset) |
+| `Nes.PpuExtraScanlinesBeforeNmi/AfterNmi` | 0 | sin overclock |
+| `Nes.ConsoleType` | `Nes001` | NES frontal (Famicom/top-loader cambian detalles de la PPU/mando) |
+| Glitches opcionales (`EnableOamDecay`, `EnablePpuOamRowCorruption`, `EnablePpu2000/2006ScrollGlitch`, `EnablePpuSpriteEvalBug`, `EnableDmcSampleDuplicationGlitch`, `RestrictPpuAccessOnFirstFrame`) | `false` (defecto) | dependen de la revisión de la consola; el port no los modela |
+| `Nes.NtscOverscan` | 0 en los 4 lados | imagen completa 256x240 |
+| `Video.VideoFilter` / brillo, contraste, matiz, saturación | `None` / 0 | sin filtros |
+| `Nes.UserPalette` | 512 entradas, entrada `p` = RGB `p` | `emu.getScreenBuffer()` devuelve la salida cruda de la PPU (índice + énfasis << 6; la escala de grises ya aplicada por la PPU); se guarda `índice & $3F`, canonicalizado con la tabla de jsnes (negros → `$0F`), igual que el port |
+| `Debug.ScriptWindow` | `AllowIoOsAccess` true, `ScriptTimeout` 3600 | FIFO y callbacks largos |
+| `Nes.InputScanline` | 241 (defecto) | sondeo del mando de Mesen al empezar el vblank |
+
+### Equivalencia con el oráculo jsnes
+
+* **Frame 0**: callback de ejecución en la primera instrucción del manejador de NMI (`$E484`, vector `$FFFA`).
+  A diferencia de jsnes (instantánea antes de apilar), la pila ya tiene PC/P apilados: solo cambia
+  `$01FD-$01FF`, ignorado.
+* **Frame N**: callback de ejecución en el `RTI` de `IsrNmi` (`$E57F`, buscado en la ROM con un barrido lineal
+  desde el vector; el mismo que ve el gancho de jsnes). Se dispara al buscar el opcode, antes de ejecutarlo.
+* **Entrada**: al entrar la NMI n se pone `movie[n-1]` en el mando 1 y se vuelve a aplicar tras cada sondeo
+  de Mesen (línea 241) hasta la NMI siguiente; equivale a jsnes (estado mantenido de NMI a NMI).
+  Limitación: `emu.setInput(t, 1)` de Mesen 2.1.1 sobrescribe también el puerto 0, así que **no se admite
+  entrada del jugador 2** (ningún movie la usa). Los movies `timing video` (.fm2) cambian la entrada en cada
+  sondeo (línea 241), no en el `frame()` de jsnes: aproximado.
+* **Imagen del frame N**: el primer frame de vídeo completado (evento `endFrame`, línea 240) tras la
+  instantánea; si llega otra instantánea antes, el frame no tiene imagen (como en jsnes).
+* **SRAM inicial**: el script escribe los 8 KB (`.sav` del movie o ceros) en la carga, antes de la primera
+  instrucción; el `Saves/zelda.sav` que Mesen carga y guarda por su cuenta se ignora.
+* **Encendido**: Mesen arranca la RAM de paleta con el patrón del hardware (`$3F00=$09`…), jsnes y el port con
+  ceros: hasta que el juego escribe la paleta (frames 0-5) el fondo uniforme difiere (clase `backdrop`).
+* **Evidencia extra por frame**: NMIs entre dos RTI (anidadas), frame de vídeo y línea de la NMI y del RTI, y
+  las escrituras a `$2000/$2001/$2005/$2006` hechas en una línea visible con la posición (línea:punto) de
+  Mesen. Protocolo del flujo: cabecera de `lua/trace.lua`.
+
+### Uso
+
+```sh
+node tools/oracle-mesen/setup.mjs                                   # una vez
+node tools/oracle-mesen/run.mjs tests/oracle/movies/title-start.zmv --png every:60   # .ztrace como run-oracle
+node tools/oracle/diff.mjs out/oracle/title-start/trace.ztrace out/oracle-mesen/title-start/trace.ztrace
+node tools/oracle-mesen/vs-jsnes.mjs [movies...] [--png-dir d]      # validación Mesen vs jsnes (lockstep)
+node tools/oracle-mesen/vs-port.mjs [movies...] [--timing hardware|jsnes|off] [--png-dir d] [--require-zero]
+MESEN=1 node --test tests/oracle-mesen/                             # tests (MESEN_FULL=1: + movies largos)
+```
+
+`run.mjs` acepta las mismas opciones que `run-oracle.mjs` (`--rom --out --frames --png --sram --power-on`;
+sin `--sram` usa la `.sav` del `.expect.json` del movie, como la batería). `vs-jsnes`/`vs-port` sin movies usan
+`power-on-600, title-start, walk-first-screens, uw-level1-full, boss-gleeok4`, comparan RAM, SRAM e imagen en
+**todos** los frames en lockstep (Mesen se ejecuta cada vez; no leen `out/`), escriben
+`out/oracle-mesen/<vs-jsnes|vs-port>/<movie>.json` + `summary.json` y clasifican cada frame distinto
+(`lib/classify.mjs`): `ram`, `backdrop`, `nested-nmi`, `lag`, `split-63`, `split-scroll`, `late-write`,
+`greyscale`, `other`. `vs-port` compara las filas 0-239 (los dos dibujan la fila 0) y por defecto pone el
+tracker del port en modo `hardware`; código 1 si difiere la RAM/SRAM (o, con `--require-zero`, cualquier
+píxel). Velocidad: ~250-300 frames/s (Mesen + volcado Lua de 10 KB por frame), ~110 s para un movie de 12 000.
+
+### Validación Mesen2 vs jsnes (2026-10-30)
+
+| Movie | Frames | RAM/SRAM distintos | Frames con imagen distinta (clase: frames) |
+|---|---|---|---|
+| power-on-600 | 600 | 0 | backdrop 6 |
+| title-start | 300 | 0 | backdrop 6, late-write 1 (frame 121: 32 px de la fila 52) |
+| walk-first-screens | 1868 | 0 | backdrop 6, split-63 49, late-write 1 |
+| uw-level1-full | 12038 | 0 | backdrop 6, split-63 3432, lag 2, late-write 1 |
+| boss-gleeok4 | 11827 | 0 | backdrop 6, split-63 683, split-scroll 19, lag 1, late-write 1 |
+
+* **RAM/SRAM idénticas en los 26 633 frames**, incluida la NMI anidada de `boss-gleeok4` (frame 6653 en los
+  dos emuladores). Confirma que la RAM no depende de la temporización.
+* `split-63` (4164 frames): solo la fila 63 (a veces 63-64) en el scroll del modo 7: las escrituras
+  `$2006/$2007` del split caen hacia el punto 200-240 de la línea 63; jsnes aplica el cambio a la línea entera.
+* `split-scroll` (19 frames, scroll vertical del modo 7 en el nivel 8): todo el campo por debajo de la fila 63
+  sale desplazado 1 línea. La segunda escritura `$2006` del split cae en la línea 63 cerca del punto 256 (el
+  incremento de Y de la PPU) en los dos emuladores (p. ej. jsnes 63:258, Mesen 63:260); jsnes, que dibuja por
+  líneas, no aplica el incremento igual que el hardware. Es la limitación de render por scanline de §4.
+* `late-write`: solo el frame 121 (PPUMASK escrito en la línea 52/53 visible), 32 px.
+* `lag` (3 frames): NMIs que en uno de los dos acaban justo al borde de un frame de vídeo (Mesen acaba en la
+  línea 240): la imagen "siguiente" es de otro frame de vídeo. Mesen cuenta 95 NMIs de más de un frame en
+  `boss-gleeok4` y jsnes 87 (62/59 en `uw-level1-full`): efecto de la deriva CPU/PPU de jsnes (frame impar,
+  DMC de 4 ciclos).
+* `backdrop`: frames 0-5, paleta de encendido (ver arriba). `greyscale` y `other`: 0.

@@ -9,6 +9,7 @@ import {
   Sub1FromInt16At4,
 } from '../util/int16.js';
 import { GetUniqueRoomId } from './roomflags.js';
+import { $br, $pxa } from '../../core/timing.js';
 
 /** LayoutUWFloor (Z_05): lays out the $C x 7 floor squares of the UW room in PlayAreaTiles. */
 export function LayoutUWFloor() {
@@ -30,19 +31,24 @@ export function LayoutUWFloor() {
   do {
     // @LoopColumnUW
     let y = ram[0x06];
+    $pxa('Z_05:5345', ram[0x02], y);
     a = read(word(0x02) + y);
     let x = (a & 0xf0) >> 3;
+    $pxa('Z_05:5351', colDir.addr, x);
     ram[0x04] = colDir.byte(x);
+    $pxa('Z_05:5353', colDir.addr + 1, x);
     ram[0x05] = colDir.byte(x + 1);
+    $pxa('Z_05:5355', ram[0x02], y);
     a = read(word(0x02) + y);
     x = a & 0x0f;
     y = 0;
     for (;;) {
       // @FindSquare
+      $pxa('Z_05:5361', ram[0x04], y);
       a = read(word(0x04) + y);
-      if (a & 0x80) {
+      if (!$br('Z_05:5362', !(a & 0x80))) {
         x = (x - 1) & 0xff;
-        if (x & 0x80) break; // @FoundColumn
+        if ($br('Z_05:5364', (x & 0x80) !== 0)) break; // @FoundColumn
       }
       y = (y + 1) & 0xff;
     }
@@ -51,12 +57,15 @@ export function LayoutUWFloor() {
     ram[0x08] = 0;
     do {
       // @LoopSquareRow
+      $pxa('Z_05:5380', ram[0x04], 0);
       a = read(word(0x04));
       x = a & 0x07;
+      $pxa('Z_05:5383', prim.addr, x);
       WriteSquareUW(prim.byte(x), 0);
       AddToInt16At0(0x02);
+      $pxa('Z_05:5389', ram[0x04], 0);
       a = (read(word(0x04)) & 0x70) >> 4;
-      if (a !== ram[0x08]) {
+      if (!$br('Z_05:5396', a === ram[0x08])) {
         ram[0x08]++;
       } else {
         ram[0x08] = 0;
@@ -64,10 +73,10 @@ export function LayoutUWFloor() {
       }
       // @NextLoopSquareRow
       ram[0x07]++;
-    } while (ram[0x07] < 0x07);
+    } while ($br('Z_05:5408', ram[0x07] < 0x07));
     AddToInt16At0(0x1e);
     ram[0x06]++;
-  } while (ram[0x06] < 0x0c);
+  } while (!$br('Z_05:5414', ram[0x06] >= 0x0c));
 }
 
 /**
@@ -77,7 +86,7 @@ export function LayoutUWFloor() {
 export function WriteSquareUW(a, y) {
   // WriteSquareUW (Z_05)
   const p = word(0x00);
-  if (a >= 0x70 && a < 0xf3) {
+  if (!$br('Z_05:5426', a < 0x70) && !$br('Z_05:5428', a >= 0xf3)) {
     let x = a;
     write(p + y, a);
     y++;
@@ -132,24 +141,26 @@ function wallLoop(y, atNext) {
   for (;;) {
     if (!atNext) {
       // LoopWallTile
+      $pxa('Z_05:4626', ram[0x00], y);
       let a = read(word(0x00) + y);
       let x;
-      if (a === 0) {
+      if ($br('Z_05:4627', a === 0)) {
         // ReachedTopWallBottom
         a = 0x13;
         ram[0x06] = a;
         x = 0x19;
+        $br('Z_05:4594', true);
       } else {
         write(word(0x02) + y, a);
         write(word(0x04) + y, a);
-        if (a !== 0xde && a < 0xe2) {
+        if (!$br('Z_05:4635', a === 0xde) && !$br('Z_05:4637', a >= 0xe2)) {
           a = (a + 0x01) & 0xff; // ADC #$01 (C clear after CMP #$E2 / BCS)
           write(word(0x04) + y, a);
         }
         a = 0x01;
         x = 0x01;
         ram[0x06]--;
-        if (ram[0x06] === 0) {
+        if (!$br('Z_05:4644', ram[0x06] !== 0)) {
           ram[0x06] = 0x0a;
           a = 0x0d;
           x = 0x1f;
@@ -159,12 +170,12 @@ function wallLoop(y, atNext) {
       AddToInt16At2(a);
       a = x;
       x = (x - 1) & 0xff;
-      if (x === 0) Sub1FromInt16At4(); // DecBottomOffset
+      if ($br('Z_05:4657', x === 0)) Sub1FromInt16At4(); // DecBottomOffset
       else AddToInt16At4(a);
     }
     atNext = false;
     // NextLoopWallTile
-    if (Add1ToInt16At0() === end) break;
+    if (!$br('Z_05:4666', Add1ToInt16At0() !== end)) break;
   }
   // Copy rotated 180 degrees.
   ram[0x02] = 0x30;
@@ -173,13 +184,15 @@ function wallLoop(y, atNext) {
   ram[0x05] = 0x67;
   for (;;) {
     // @LoopRotate
+    $pxa('Z_05:4682', ram[0x02], y);
     let a = read(word(0x02) + y);
     write(word(0x04) + y, a);
-    if (a === 0xdd) {
+    if ($br('Z_05:4685', a === 0xdd)) {
       // @SwapWithVertical
+      $br('Z_05:4711', true);
       write(word(0x04) + y, 0xdc);
-    } else if (a < 0xe0) {
-      if (a < 0xdc) {
+    } else if (!$br('Z_05:4687', a >= 0xe0)) {
+      if (!$br('Z_05:4689', a >= 0xdc)) {
         a = (a + 0x01) & 0xff;
         write(word(0x04) + y, a);
       }
@@ -188,8 +201,8 @@ function wallLoop(y, atNext) {
     }
     // @NextLoopRotate
     Sub1FromInt16At4();
-    if (Add1ToInt16At2() !== 0x90) continue;
-    if (ram[0x03] !== 0x66) continue;
+    if ($br('Z_05:4703', Add1ToInt16At2() !== 0x90)) continue;
+    if ($br('Z_05:4706', ram[0x03] !== 0x66)) continue;
     return;
   }
 }
