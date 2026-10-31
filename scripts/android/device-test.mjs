@@ -95,7 +95,7 @@ async function adbDriver() {
   const adb = findAdb();
   const sh = (...a) => spawnSync(adb, a, { encoding: 'utf8' });
   const shBin = (...a) => spawnSync(adb, a, { maxBuffer: 1 << 28 }).stdout;
-  if (!existsSync(DEBUG_APK)) throw new Error('falta dist/zelda1-js-debug.apk: npm run android:build -- --debug');
+  if (!existsSync(DEBUG_APK)) throw new Error('falta dist/zelda-debug.apk: npm run android:build -- --debug');
   const inst = sh('install', '-r', DEBUG_APK);
   if (!/Success/.test(inst.stdout)) throw new Error(`adb install: ${inst.stdout}${inst.stderr}`);
   sh('shell', 'pm', 'clear', DEBUG_APP_ID);

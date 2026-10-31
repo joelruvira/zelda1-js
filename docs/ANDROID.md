@@ -6,7 +6,7 @@ Capacitor ni Cordova: el proyecto Gradle es nativo y mínimo (Kotlin, AndroidX `
 
 **El APK lleva la ROM del usuario dentro.** Se construye en el ordenador con tu ROM en `roms/zelda.nes`
 (validada: USA PRG0) y en el móvil el juego arranca directamente, sin pedir nada. Por eso
-`dist/zelda1-js.apk` es **solo para uso propio**: no se debe compartir ni subir a ningún sitio (contiene el
+`dist/zelda.apk` es **solo para uso propio**: no se debe compartir ni subir a ningún sitio (contiene el
 juego). La ROM nunca entra en git: se empaqueta desde una carpeta de build ignorada (ver *ROM*).
 
 ## Estructura
@@ -50,17 +50,17 @@ de build ignorada por git que Gradle añade como assets; en el APK queda en `ass
 ## Comandos
 
 ```
-npm run android:build              ROM + assets + assembleRelease -> dist/zelda1-js.apk
+npm run android:build              ROM + assets + assembleRelease -> dist/zelda.apk
 npm run android:build -- --debug | --debug-only   además (o solo) el APK debug, para las pruebas de dispositivo
-npm run android:install            adb install -r dist/zelda1-js.apk   (-- --debug: el APK debug)
+npm run android:install            adb install -r dist/zelda.apk   (-- --debug: el APK debug)
 npm run android:assets             solo copiar los assets
 npm run android:device-test        prueba de extremo a extremo en el emulador/móvil (APK debug)
 node scripts/android/device-test.mjs --browser [--movies all]   la misma prueba en Chrome de escritorio
 ANDROID=1 node --test tests/android/device.test.mjs              la prueba de dispositivo desde node --test
 ```
 
-Salida: un único `dist/zelda1-js.apk` (release firmado con tu ROM dentro, ~0,6 MB). Con `--debug`, además
-`dist/zelda1-js-debug.apk` (con `.debug` en el applicationId: se instala junto al release, con sus propios
+Salida: un único `dist/zelda.apk` (release firmado con tu ROM dentro, ~0,6 MB). Con `--debug`, además
+`dist/zelda-debug.apk` (con `.debug` en el applicationId: se instala junto al release, con sus propios
 datos; lleva la autoprueba y las DevTools del WebView activadas; también lleva la ROM). Si `roms/zelda.nes`
 falta o no es la USA PRG0, el build se para con un mensaje en español antes de llamar a Gradle (y la tarea
 `packRom` falla igual si se ejecuta Gradle directamente). El build es reproducible: las mismas fuentes y la misma clave dan el mismo
@@ -160,7 +160,7 @@ sitio.**
 La ROM no puede acabar en git: `copy-web.mjs` se niega a copiar ROMs a `src/main/assets`, la ROM empaquetada
 vive en `android/app/build/` (ignorada) y `tests/android/rom-packaging.test.mjs` comprueba que ningún archivo
 versionado (o que se pudiera añadir) es una ROM o contiene la cabecera iNES, que `.gitignore` cubre la ROM, los
-assets generados, los APK y la clave, y que el `dist/zelda1-js.apk` construido sí lleva la ROM válida.
+assets generados, los APK y la clave, y que el `dist/zelda.apk` construido sí lleva la ROM válida.
 
 Respaldo (no debería verse): si la ROM del APK faltara o no pasara la validación, la página usa una ROM guardada
 de una instalación anterior (`files/rom/zelda.nes`) o muestra la pantalla *Elige tu ROM de The Legend of Zelda

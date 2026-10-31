@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // npm run android:install [-- --debug]
-// Installs (or updates, keeping the saved games) dist/zelda1-js.apk on the phone connected by USB
+// Installs (or updates, keeping the saved games) dist/zelda.apk on the phone connected by USB
 // with USB debugging on. Builds it first when it is missing.
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -32,15 +32,15 @@ if (!ready.length) {
 }
 const serial = process.env.ANDROID_SERIAL ?? (ready.length > 1 ? ready[0].split('\t')[0] : null);
 const base = serial ? ['-s', serial] : [];
-console.log(`Instalando ${debug ? 'zelda1-js-debug.apk' : 'zelda1-js.apk'} en ${serial ?? ready[0].split('\t')[0]}…`);
+console.log(`Instalando ${debug ? 'zelda-debug.apk' : 'zelda.apk'} en ${serial ?? ready[0].split('\t')[0]}…`);
 const r = spawnSync(adb, [...base, 'install', '-r', apk], { encoding: 'utf8' });
 process.stdout.write(r.stdout ?? '');
 process.stderr.write(r.stderr ?? '');
 if (r.status !== 0 || !/Success/.test(r.stdout ?? '')) {
   if (/UPDATE_INCOMPATIBLE|signatures do not match/i.test(`${r.stdout}${r.stderr}`)) {
-    console.error('\nEl móvil tiene una versión firmada con otra clave. Desinstala "Zelda 1 JS" del móvil y vuelve a intentarlo\n' +
+    console.error('\nEl móvil tiene una versión firmada con otra clave. Desinstala "Zelda" del móvil y vuelve a intentarlo\n' +
       '(las partidas guardadas se borran al desinstalar).');
   }
   process.exit(1);
 }
-console.log('Listo: abre "Zelda 1 JS" en el móvil.');
+console.log('Listo: abre "Zelda" en el móvil.');

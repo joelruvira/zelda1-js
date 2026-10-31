@@ -1,6 +1,6 @@
 // The APK carries the player's ROM (npm run android:build packs roms/zelda.nes), but the ROM must never
 // reach git: no versioned (or committable) file is a ROM or contains an iNES header, the generated asset
-// folders are git-ignored, and the packing step validates the ROM. When dist/zelda1-js.apk exists, it must
+// folders are git-ignored, and the packing step validates the ROM. When dist/zelda.apk exists, it must
 // contain exactly the valid US PRG0 ROM at assets/rom/zelda.nes. No emulator needed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +14,7 @@ import { checkZeldaRom } from '../../android/web/romcheck.js';
 const INES = Buffer.from([0x4e, 0x45, 0x53, 0x1a]); // "NES\x1A"
 const git = (...args) => spawnSync('git', args, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 26 });
 const hasGit = git('rev-parse', '--is-inside-work-tree').stdout?.trim() === 'true';
-const RELEASE_APK = join(REPO, 'dist/zelda1-js.apk');
+const RELEASE_APK = join(REPO, 'dist/zelda.apk');
 
 test('git: no versioned or committable file is a ROM or contains an iNES header', { skip: !hasGit && 'not a git checkout' }, () => {
   const list = (...a) => git('ls-files', '-z', ...a).stdout.split('\0').filter(Boolean);
@@ -34,8 +34,8 @@ test('git: the ROM, the generated assets, the APKs and the signing key are ignor
     relative(REPO, join(ROM_ASSETS_DIR, ROM_ASSET_PATH)),
     'android/app/src/main/assets/www/src/main.js',
     'android/app/src/debug/assets/www/android/web/selftest.js',
-    'dist/zelda1-js.apk',
-    'dist/zelda1-js-debug.apk',
+    'dist/zelda.apk',
+    'dist/zelda-debug.apk',
     'android/keystore/release.jks',
     'android/keystore/keystore.properties',
     'android/local.properties',
@@ -76,8 +76,8 @@ test('pack: the US PRG0 ROM is validated and copied byte for byte', { skip: !exi
 const unzip = (apk, ...args) => spawnSync('unzip', [...args, apk], { encoding: 'buffer', maxBuffer: 1 << 26 });
 const canUnzip = !spawnSync('unzip', ['-v']).error;
 
-test('APK: dist/zelda1-js.apk contains the valid US PRG0 ROM (and only there)', {
-  skip: (!existsSync(RELEASE_APK) && 'dist/zelda1-js.apk not built (npm run android:build)') || (!canUnzip && 'no unzip'),
+test('APK: dist/zelda.apk contains the valid US PRG0 ROM (and only there)', {
+  skip: (!existsSync(RELEASE_APK) && 'dist/zelda.apk not built (npm run android:build)') || (!canUnzip && 'no unzip'),
 }, async () => {
   const names = unzip(RELEASE_APK, '-Z1').stdout.toString().split('\n').filter(Boolean);
   assert.ok(names.includes(`assets/${ROM_ASSET_PATH}`), 'assets/rom/zelda.nes in the APK');

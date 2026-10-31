@@ -79,11 +79,11 @@ Haz antes los pasos 1 a 4 de arriba. Además necesitas tener instalado [Android 
 npm run android:build
 ```
 
-Tarda un poco la primera vez. Al terminar tendrás la app en la carpeta `dist`, con el nombre `zelda1-js.apk`.
+Tarda un poco la primera vez. Al terminar tendrás la app en la carpeta `dist`, con el nombre `zelda.apk`.
 
 La app lleva **tu ROM dentro**: se coge de `roms/zelda.nes` (la que pusiste en los pasos de arriba), así que en el móvil no tendrás que buscarla ni elegirla. Tiene que ser la versión **USA (PRG0)**; si falta o es otra, `npm run android:build` se para y te dice qué pasa.
 
-> **Importante:** como lleva el juego dentro, ese `zelda1-js.apk` es **solo para ti**. No lo compartas, no se lo pases a nadie y no lo subas a ningún sitio (ni a la nube, ni a webs, ni a GitHub). Tu ROM tampoco se sube nunca a este repositorio: se queda en tu ordenador.
+> **Importante:** como lleva el juego dentro, ese `zelda.apk` es **solo para ti**. No lo compartas, no se lo pases a nadie y no lo subas a ningún sitio (ni a la nube, ni a webs, ni a GitHub). Tu ROM tampoco se sube nunca a este repositorio: se queda en tu ordenador.
 
 ### 2. Pásala al móvil
 
@@ -93,11 +93,11 @@ La app lleva **tu ROM dentro**: se coge de `roms/zelda.nes` (la que pusiste en l
 npm run android:install
 ```
 
-**Sin la depuración USB:** con el móvil conectado por cable, copia el archivo `dist/zelda1-js.apk` a la carpeta *Download* del móvil (como harías con una foto) y ábrelo desde la app *Mis archivos*. El móvil te pedirá permiso para *instalar apps desconocidas*: acéptalo solo para esa app. No te lo mandes por correo ni lo subas a la nube: lleva el juego dentro.
+**Sin la depuración USB:** con el móvil conectado por cable, copia el archivo `dist/zelda.apk` a la carpeta *Download* del móvil (como harías con una foto) y ábrelo desde la app *Mis archivos*. El móvil te pedirá permiso para *instalar apps desconocidas*: acéptalo solo para esa app. No te lo mandes por correo ni lo subas a la nube: lleva el juego dentro.
 
 Para actualizarla más adelante, repite lo mismo: tus partidas se conservan.
 
-Al abrir **Zelda 1 JS** el juego empieza directamente.
+Al abrir **Zelda** el juego empieza directamente.
 
 ### Controles en el móvil
 

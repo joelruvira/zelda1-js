@@ -2,9 +2,9 @@
 // npm run android:build [-- --debug | --debug-only]
 // Validates the ROM (roms/zelda.nes, US PRG0) and packs it, copies the web game into the assets, builds the
 // signed release APK with the Gradle wrapper and leaves it in dist/:
-//   dist/zelda1-js.apk        release with YOUR ROM inside, signed with the local key (android/keystore/).
+//   dist/zelda.apk        release with YOUR ROM inside, signed with the local key (android/keystore/).
 //                             For personal use only: never share or upload it (it contains the game).
-//   dist/zelda1-js-debug.apk  only with --debug / --debug-only: self test, WebView DevTools (device tests)
+//   dist/zelda-debug.apk  only with --debug / --debug-only: self test, WebView DevTools (device tests)
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';

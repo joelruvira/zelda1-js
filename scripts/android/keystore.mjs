@@ -30,10 +30,10 @@ export function ensureKeystore({ quiet = false } = {}) {
     '-genkeypair', '-keystore', KEYSTORE_FILE, '-storetype', 'PKCS12', '-alias', 'zelda1js',
     '-keyalg', 'RSA', '-keysize', '4096', '-validity', '10000',
     '-storepass', password, '-keypass', password,
-    '-dname', 'CN=Zelda 1 JS, OU=Local build, O=zelda1-js',
+    '-dname', 'CN=Zelda, OU=Local build, O=zelda1-js',
   ], { stdio: quiet ? 'ignore' : 'inherit' });
   writeFileSync(KEYSTORE_PROPS, [
-    '# Local release key of Zelda 1 JS (NOT in git). Keep a backup of this folder: updates need the same key.',
+    '# Local release key of Zelda (NOT in git). Keep a backup of this folder: updates need the same key.',
     'storeFile=release.jks',
     `storePassword=${password}`,
     'keyAlias=zelda1js',
