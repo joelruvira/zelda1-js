@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zelda 1 JS - self test</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #000; color: #ddd; font: 14px/1.5 monospace; }
+    .ok { color: #7d7; } .bad { color: #f77; }
+  </style>
+</head>
+<body>
+  <h3>Self test (debug)</h3>
+  <div id="log"></div>
+  <script type="module">
+    // Debug APK only (copied to src/debug/assets). Started by MainActivity with the intent extra
+    // "selftest" (comma-separated movie names, or "all"): plays each movie of tests/oracle/movies and
+    // writes the hashes to the app's files (ZeldaNative.writeTestResult) for scripts/android/device-test.mjs.
+    import { selfTest } from './selftest.js';
+    const N = globalThis.ZeldaNative;
+    const log = (text, cls = '') => {
+      const p = document.createElement('div');
+      p.textContent = text;
+      p.className = cls;
+      document.getElementById('log').appendChild(p);
+      console.log(`SELFTEST ${text}`);
+    };
+    const fetchBytes = async (url) => {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return new Uint8Array(await r.arrayBuffer());
+    };
+    const MOVIES = '../../tests/oracle/movies/';
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      let names = (params.get('movies') ?? 'title-start,walk-first-screens').split(',').filter(Boolean);
+      if (names[0] === 'all') names = (await (await fetch(`${MOVIES}index.json`)).json());
+      const rom = await fetchBytes(N ? '/native/rom/zelda.nes' : '../../roms/zelda.nes');
+      const summary = [];
+      globalThis.__selftest = { done: false, results: summary, full: {} };
+      for (const name of names) {
+        try {
+          const zmv = await (await fetch(`${MOVIES}${name}.zmv`, { cache: 'no-store' })).text();
+          let sram = null;
+          const exp = await fetch(`${MOVIES}${name}.expect.json`, { cache: 'no-store' });
+          if (exp.ok) {
+            const e = await exp.json();
+            if (e.sram) sram = await fetchBytes(`${MOVIES}${e.sram.split('/').pop()}`);
+          }
+          const r = await selfTest({ rom, name, zmv, sram });
+          if (N) N.writeTestResult(name, JSON.stringify(r));
+          else globalThis.__selftest.full[name] = r;
+          summary.push({ name, frames: r.frames, digest: r.digest, msNmi: r.nmi.msPerFrame, msVideo: r.video.msPerFrame });
+          log(`${name} frames=${r.frames} video=${r.video.videoFrames} fb=${r.digest.fb} ram=${r.digest.ram} sram=${r.digest.sram} pics=${r.digest.video} ` +
+            `ms/frame nmi=${r.nmi.msPerFrame.toFixed(2)} video=${r.video.msPerFrame.toFixed(2)}`, 'ok');
+        } catch (err) {
+          summary.push({ name, error: String(err) });
+          log(`${name} ERROR ${err.stack ?? err}`, 'bad');
+        }
+      }
+      N?.writeTestResult('_summary', JSON.stringify(summary));
+      globalThis.__selftest.done = true;
+      log('DONE');
+    })();
+  </script>
+</body>
+</html>

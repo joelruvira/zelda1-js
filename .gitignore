@@ -5,3 +5,19 @@ reference/
 node_modules/
 out/
 .DS_Store
+dist/
+*.apk
+*.aab
+*.jks
+*.keystore
+# Android build (android/): generated assets, Gradle state, local SDK path, signing key
+android/keystore/
+android/local.properties
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/app/src/main/assets/
+android/app/src/debug/assets/
+android/.idea/
+*.iml

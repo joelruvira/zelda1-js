@@ -1,0 +1,71 @@
+:root {
+  --bg: #000;
+  --fg: #e8e8e8;
+  --muted: #9a9a9a;
+  --accent: #d8a020;
+  --ctl: rgba(255, 255, 255, 0.16);
+  --ctl-line: rgba(255, 255, 255, 0.38);
+  --ctl-on: rgba(255, 255, 255, 0.42);
+  --ctl-text: rgba(255, 255, 255, 0.7);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
+  font: 16px/1.4 system-ui, sans-serif;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  touch-action: none; overscroll-behavior: none;
+}
+canvas#screen {
+  position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; background: #000;
+}
+
+/* ---- touch controls ---- */
+#touch { position: absolute; inset: 0; touch-action: none; transition: opacity .25s; }
+#touch.faded { opacity: 0; }
+#touch > div { position: absolute; pointer-events: none; }
+.tc-dpad svg { width: 100%; height: 100%; overflow: visible; }
+.tc-ring { fill: rgba(255, 255, 255, 0.05); stroke: rgba(255, 255, 255, 0.12); stroke-width: 2; }
+.tc-cross { fill: var(--ctl); stroke: var(--ctl-line); stroke-width: 3; stroke-linejoin: round; }
+.tc-arm { fill: transparent; }
+.tc-arm.on { fill: var(--ctl-on); }
+.tc-btn {
+  border-radius: 50%; background: var(--ctl); border: 3px solid var(--ctl-line);
+  display: flex; align-items: center; justify-content: center; color: var(--ctl-text); font-weight: 700;
+}
+.tc-pill {
+  border-radius: 999px; background: var(--ctl); border: 2px solid var(--ctl-line);
+  display: flex; align-items: center; justify-content: center; color: var(--ctl-text);
+  font-weight: 700; letter-spacing: .08em;
+}
+.tc-btn.on, .tc-pill.on { background: var(--ctl-on); }
+.tc-menu { border-radius: 8px; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.2); }
+.tc-menu svg { width: 100%; height: 100%; display: block; }
+.tc-menu path { stroke: var(--ctl-text); stroke-width: 2; stroke-linecap: round; fill: none; }
+
+/* ---- full-screen panels ---- */
+.screen {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
+}
+.screen[hidden] { display: none; }
+#loading { color: var(--muted); }
+#romScreen { background: var(--bg); }
+#menu, #message { background: rgba(0, 0, 0, 0.72); }
+.card { max-width: 34em; text-align: center; }
+.card h1 { font-size: 1.35em; margin: .4em 0; }
+.card h2 { font-size: 1.2em; margin: 0 0 .6em; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; }
+.card p { color: var(--muted); margin: .5em 0; }
+.card p b { color: var(--fg); }
+.logo { width: 56px; height: 56px; }
+.actions { display: flex; gap: 12px; justify-content: center; margin-top: 1em; }
+button {
+  font: inherit; font-weight: 600; color: #111; background: var(--accent); border: 0; border-radius: 10px;
+  padding: .7em 1.6em; min-width: 10em; touch-action: manipulation;
+}
+button.secondary { background: #333; color: var(--fg); }
+button:disabled { opacity: .5; }
+#romError { color: #ff8a70; min-height: 1.4em; font-weight: 600; }
+.menu { display: flex; flex-direction: column; gap: 8px; background: #141414; border: 1px solid #333; border-radius: 14px; padding: 18px 22px; min-width: 18em; }
+.menu button { background: #262626; color: var(--fg); }
+.menu button:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
+.menu button:active { background: #3a3a3a; }

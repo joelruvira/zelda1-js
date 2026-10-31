@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Zelda 1 JS</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <canvas id="screen" width="256" height="240" hidden></canvas>
+  <div id="touch" hidden></div>
+
+  <div id="loading" class="screen"><p>Cargando…</p></div>
+
+  <div id="romScreen" class="screen" hidden>
+    <div class="card">
+      <svg class="logo" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
+        <rect x="7" y="1" width="2" height="9" fill="#e8e8e8"/><rect x="8" y="1" width="1" height="9" fill="#a8a8b8"/>
+        <rect x="7" y="0" width="1" height="1" fill="#e8e8e8"/><rect x="4" y="10" width="8" height="1" fill="#d8a020"/>
+        <rect x="4" y="11" width="8" height="1" fill="#986010"/><rect x="7" y="12" width="2" height="3" fill="#7c4a1c"/>
+        <rect x="6" y="15" width="4" height="1" fill="#d8a020"/>
+      </svg>
+      <h1>Elige tu ROM de The Legend of Zelda (USA, PRG0)</h1>
+      <p>Esta app no incluye el juego. Busca en el móvil tu copia en formato <b>.nes</b>.
+        Solo te la pedirá esta vez.</p>
+      <div class="actions">
+        <button id="pickBtn" type="button">Elegir archivo</button>
+        <button id="romBack" type="button" class="secondary" hidden>Volver</button>
+      </div>
+      <p id="romError" role="alert"></p>
+    </div>
+  </div>
+
+  <div id="menu" class="screen" hidden>
+    <div class="card menu">
+      <h2>Pausa</h2>
+      <button type="button" data-act="continue">Continuar</button>
+      <button type="button" data-act="rom">Cambiar ROM</button>
+      <button type="button" data-act="vibration" id="optVibration">Vibración</button>
+      <button type="button" data-act="scale" id="optScale">Imagen</button>
+      <button type="button" data-act="exit">Salir</button>
+    </div>
+  </div>
+
+  <div id="message" class="screen" hidden><div class="card"><p id="messageText"></p></div></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

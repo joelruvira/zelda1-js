@@ -84,6 +84,7 @@ export function createLoop({ frame, present = () => {}, now = () => performance.
   let last = 0;
   let acc = 0;
   let frames = 0;
+  let generation = 0; // a wake-up still pending from before stop() must not start a second chain
 
   /** Advance by elapsed real time; returns the number of frames run. */
   function tick() {
@@ -101,14 +102,17 @@ export function createLoop({ frame, present = () => {}, now = () => performance.
     return n;
   }
 
-  function wake() {
-    if (!running) return;
-    tick();
-    sched(wake);
+  function chain(gen) {
+    const wake = () => {
+      if (!running || gen !== generation) return;
+      tick();
+      sched(wake);
+    };
+    return wake;
   }
 
   return {
-    start() { if (running) return; running = true; last = now(); acc = 0; sched(wake); },
+    start() { if (running) return; running = true; last = now(); acc = 0; sched(chain(++generation)); },
     stop() { running = false; },
     /** Run exactly one frame (debugging / frame advance). */
     step() { frame(); frames++; present(); },

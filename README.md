@@ -67,6 +67,48 @@ También funciona con un mando conectado al ordenador.
 
 Se guardan solas en el navegador, igual que en el cartucho original. Juega siempre desde el mismo navegador para no perderlas.
 
+## Jugar en Android
+
+También hay una versión para el móvil (probada pensando en un Samsung Galaxy S26 Ultra, pero vale para cualquier Android 8 o más nuevo). Es el mismo juego, con controles táctiles en la pantalla.
+
+### 1. Prepara la app
+
+Haz antes los pasos 1 a 4 de arriba. Además necesitas tener instalado [Android Studio](https://developer.android.com/studio) (solo para que el ordenador sepa crear apps de Android; no hace falta abrirlo después). Luego escribe en la terminal:
+
+```
+npm run android:build
+```
+
+Tarda un poco la primera vez. Al terminar tendrás la app en la carpeta `dist`, con el nombre `zelda1-js.apk`.
+
+La app lleva **tu ROM dentro**: se coge de `roms/zelda.nes` (la que pusiste en los pasos de arriba), así que en el móvil no tendrás que buscarla ni elegirla. Tiene que ser la versión **USA (PRG0)**; si falta o es otra, `npm run android:build` se para y te dice qué pasa.
+
+> **Importante:** como lleva el juego dentro, ese `zelda1-js.apk` es **solo para ti**. No lo compartas, no se lo pases a nadie y no lo subas a ningún sitio (ni a la nube, ni a webs, ni a GitHub). Tu ROM tampoco se sube nunca a este repositorio: se queda en tu ordenador.
+
+### 2. Pásala al móvil
+
+**La forma más fácil:** conecta el móvil al ordenador con el cable USB. En el móvil, activa las *Opciones de desarrollador* (en Ajustes, Información del teléfono, Información de software, toca siete veces *Número de compilación*) y dentro de ellas activa *Depuración USB*. Acepta el aviso que sale en el móvil y escribe:
+
+```
+npm run android:install
+```
+
+**Sin la depuración USB:** con el móvil conectado por cable, copia el archivo `dist/zelda1-js.apk` a la carpeta *Download* del móvil (como harías con una foto) y ábrelo desde la app *Mis archivos*. El móvil te pedirá permiso para *instalar apps desconocidas*: acéptalo solo para esa app. No te lo mandes por correo ni lo subas a la nube: lleva el juego dentro.
+
+Para actualizarla más adelante, repite lo mismo: tus partidas se conservan.
+
+Al abrir **Zelda 1 JS** el juego empieza directamente.
+
+### Controles en el móvil
+
+- **Cruceta** a la izquierda: puedes deslizar el dedo para cambiar de dirección sin levantarlo, también en diagonal.
+- **B y A** a la derecha. Si pones el dedo entre los dos, pulsas los dos a la vez.
+- **SELECT y START** abajo, en el centro.
+- El botón **Atrás** del móvil (o el botón ≡ de arriba a la derecha) pausa el juego y abre un menú para continuar, quitar la vibración, cambiar el tamaño de la imagen o salir.
+- Si conectas un **mando** por Bluetooth o USB, funciona directamente y los controles de la pantalla se esconden. Vuelven a salir en cuanto tocas la pantalla.
+
+Las partidas se guardan solas dentro de la app, como en el cartucho. No se pierden al cerrarla ni al reiniciar el móvil, pero sí si desinstalas la app.
+
 ---
 
 <sub>The Legend of Zelda es una marca de Nintendo. Proyecto de fans sin ánimo de lucro y sin relación con Nintendo. Este repositorio no contiene ningún dato del juego original. El código se publica bajo la licencia [GPL-3.0](LICENSE); la parte que dibuja la imagen como la consola real sigue el funcionamiento del emulador [Mesen2](https://github.com/SourMesen/Mesen2), también GPL-3.0.</sub>

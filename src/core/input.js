@@ -1,4 +1,4 @@
-// Keyboard + Gamepad -> NES controller bytes, plus the $4016/$4017 serial protocol.
+// Keyboard + Gamepad (+ virtual sources: touch controls, native pads) -> NES controller bytes, plus the $4016/$4017 serial protocol.
 // Byte layout as the game assembles it (ReadOneController ROLs 8 reads, first read = bit 7):
 //   bit7 A, bit6 B, bit5 Select, bit4 Start, bit3 Up, bit2 Down, bit1 Left, bit0 Right.
 
@@ -24,6 +24,7 @@ export class Input {
     this.keymap = { ...keymap };
     this.micKey = micKey;
     this.keyState = [0, 0];
+    this.virtual = [0, 0]; // buttons held by other sources (Android shell: touch controls, native gamepads)
     this.mic = false;
     this.state = [0, 0]; // latched each poll
     this.shift = [0, 0];
@@ -50,9 +51,12 @@ export class Input {
     return true;
   }
 
-  /** Current buttons of pad 0/1 (keyboard OR gamepad), in the game's byte layout. */
+  /** Buttons held by a virtual source (touch controls, native gamepad), in the game's byte layout. */
+  setVirtual(pad, bits) { this.virtual[pad] = bits & 0xff; }
+
+  /** Current buttons of pad 0/1 (keyboard OR gamepad OR virtual), in the game's byte layout. */
   buttons(pad) {
-    let b = this.keyState[pad];
+    let b = this.keyState[pad] | this.virtual[pad];
     const gp = this.getGamepads()?.[pad];
     if (gp) {
       for (const [i, bit] of PAD_BUTTONS) if (gp.buttons[i]?.pressed) b |= bit;

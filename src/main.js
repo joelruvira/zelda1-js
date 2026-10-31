@@ -2,16 +2,12 @@
 // Until the game is ported (src/game), it runs a tile viewer that exercises the
 // ROM -> CHR-RAM -> PPU -> canvas pipeline with the overworld pattern blocks.
 
-import { loadRom, loadSymbols, checkRevision } from './core/rom.js';
-import { createMachine } from './core/machine.js';
-import { createLoop, runReset, runVideoFrame } from './core/loop.js';
-import { setupTiming, timing } from './core/timing.js';
+import { loadRom } from './core/rom.js';
 import { getStoredRom, storeRom, forgetRom } from './core/romstore.js';
 import { loadSram, createAutoSaver } from './core/savestore.js';
 import { read } from './core/bus.js';
-import { cpu } from './core/ram.js';
 import { createTileViewer } from './tileviewer.js';
-import { createGameLogic } from './game/index.js';
+import { bootGame, createGameLoop } from './session.js';
 import { WIDTH, HEIGHT } from './core/ppu.js';
 
 const $ = (id) => document.getElementById(id);
@@ -34,9 +30,8 @@ function fitCanvas() {
 }
 addEventListener('resize', fitCanvas);
 
-let picture = null; // RGBA picture of the last video frame (runVideoFrame)
-function present() {
-  image.data.set(picture ?? machine.ppu.frameBuffer);
+function present(picture) {
+  image.data.set(picture);
   ctx.putImageData(image, 0, 0);
 }
 
@@ -54,27 +49,19 @@ async function start(buffer, { remember = true } = {}) {
     return;
   }
   if (remember) storeRom(buffer);
-  await loadSymbols();
-  const { PRG_FINGERPRINT, INCBIN_RANGES } = await import('./core/symbols.js');
-  const revision = checkRevision(rom, PRG_FINGERPRINT, INCBIN_RANGES);
   loop?.stop();
-  machine = createMachine(rom);
-  machine.input.attach(window);
-  loadSram(machine.sram);
   clearInterval(autosaveTimer);
-  autosaveTimer = setInterval(createAutoSaver(machine.sram), 1000);
-
-  const logic = createGameLogic();
-  game = logic.ported ? logic : createTileViewer(); // tile viewer until P01 ports IsrReset/IsrNmi
-  try {
-    await setupTiming({ rom, mode: logic.ported ? TIMING_MODE : 'off' });
-  } catch (err) {
-    console.warn('timing off:', err);
-    await setupTiming({ rom, mode: 'off' });
-  }
-  cpu.reset(); // same power-on flags/stack as src/headless.js
-  runReset(machine, game);
-  picture = null;
+  const session = await bootGame(rom, {
+    timingMode: TIMING_MODE,
+    fallback: createTileViewer,
+    prepare: (m) => {
+      m.input.attach(window);
+      loadSram(m.sram);
+      autosaveTimer = setInterval(createAutoSaver(m.sram), 1000);
+    },
+  });
+  ({ machine, game } = session);
+  const { revision, ported } = session;
   $('intro').hidden = true;
   canvas.hidden = false;
   $('tableBtn').hidden = false;
@@ -82,27 +69,19 @@ async function start(buffer, { remember = true } = {}) {
   fitCanvas();
   machine.bus.apuWrite = (addr, value) => audio?.writeRegister(addr, value);
   audio?.setReadMemory(readCpu); // re-snapshot $8000-$FFFF for the DMC with the new ROM
-  let halted = false;
-  loop = createLoop({
-    frame: () => {
-      if (halted) return;
-      try {
-        picture = runVideoFrame(machine, game);
-      } catch (err) {
-        // A routine of a later package is still a stub (NotImplementedError): stop on this frame.
-        halted = true;
-        loop.stop();
-        status(`Juego detenido: ${err.message}`);
-        console.error(err);
-        return;
-      }
-      audio?.endFrame();
-    },
+  loop = createGameLoop({
+    machine,
+    game,
     present,
+    audio: () => audio,
+    onHalt: (err) => {
+      status(`Juego detenido: ${err.message}`);
+      console.error(err);
+    },
   });
   loop.start();
   status(revision.ok
-    ? `ROM cargada (USA PRG0)${logic.ported ? '' : ' · visor de tiles (overworld)'}`
+    ? `ROM cargada (USA PRG0)${ported ? '' : ' · visor de tiles (overworld)'}`
     : `Aviso: la ROM no es la revisión USA PRG0 (bancos distintos: ${revision.mismatchedBanks.join(', ')})`);
 }
 

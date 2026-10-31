@@ -15,6 +15,10 @@
     "gen-vars": "node scripts/gen-vars.mjs",
     "gen-symbols": "node scripts/gen-symbols.mjs",
     "gen-cfg": "node scripts/gen-cfg.mjs",
-    "gen": "node scripts/gen-vars.mjs && node scripts/gen-symbols.mjs && node scripts/gen-cfg.mjs"
+    "gen": "node scripts/gen-vars.mjs && node scripts/gen-symbols.mjs && node scripts/gen-cfg.mjs",
+    "android:build": "node scripts/android/build.mjs",
+    "android:install": "node scripts/android/install.mjs",
+    "android:assets": "node scripts/android/copy-web.mjs",
+    "android:device-test": "node scripts/android/device-test.mjs"
   }
 }
